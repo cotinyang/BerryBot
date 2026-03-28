@@ -58,8 +58,8 @@ def parse_args(argv: list[str] | None = None) -> ClientConfig:
     )
     parser.add_argument(
         "--wake-prompt-audio-path",
-        default="assets/wo_zai.wav",
-        help="唤醒提示音文件路径（默认: assets/wo_zai.wav）",
+        default="assets/wo_zai.mp3",
+        help="唤醒提示音文件路径（默认: assets/wo_zai.mp3）",
     )
     parser.add_argument(
         "--wake-prompt-delay",

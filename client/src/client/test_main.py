@@ -34,7 +34,7 @@ class TestParseArgs:
         config = parse_args([
             "--server-url", "ws://host:8765",
         ])
-        assert config.wake_prompt_audio_path == "assets/wo_zai.wav"
+        assert config.wake_prompt_audio_path == "assets/wo_zai.mp3"
         assert config.wake_prompt_delay == 0.3
         assert config.silence_threshold == 1.5
         assert config.sample_rate == 16000

@@ -86,7 +86,7 @@ vim .env
 
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
-| `WAKE_PROMPT_AUDIO` | `assets/wo_zai.wav` | 唤醒提示音文件（"我在"） |
+| `WAKE_PROMPT_AUDIO` | `assets/wo_zai.mp3` | 唤醒提示音文件（"我在"） |
 | `WAKE_PROMPT_DELAY` | `0.3` | 唤醒后等待后续语音的窗口期（秒） |
 | `SILENCE_THRESHOLD` | `1.5` | 静音检测阈值（秒） |
 | `SAMPLE_RATE` | `16000` | 音频采样率 |
@@ -136,7 +136,11 @@ vim .env
 
 ## 提示音
 
-将唤醒提示音文件（WAV 格式）放到 `assets/wo_zai.wav`。可以自己录制或用 TTS 生成。
+将唤醒提示音文件（MP3 格式）放到 `assets/wo_zai.mp3`。已预生成，也可以自己录制或用 edge-tts 重新生成：
+
+```bash
+cd server && uv run edge-tts --voice zh-CN-XiaoxiaoNeural --text "我在" --write-media ../client/assets/wo_zai.mp3
+```
 
 ## 测试
 

@@ -16,7 +16,7 @@ class ClientConfig:
     wake_word_keywords: str = "小艺小艺"   # 逗号分隔的唤醒词列表
     wake_word_model_path: str = ""         # sherpa-onnx 关键词检测模型路径（留空自动下载）
     auth_token: str = ""                   # 预共享认证 token
-    wake_prompt_audio_path: str = "assets/wo_zai.wav"
+    wake_prompt_audio_path: str = "assets/wo_zai.mp3"
     wake_prompt_delay: float = 0.3
     silence_threshold: float = 1.5
     sample_rate: int = 16000

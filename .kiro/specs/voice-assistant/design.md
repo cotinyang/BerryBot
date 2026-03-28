@@ -358,7 +358,7 @@ class ClientConfig:
     wake_word_keywords: str = "小艺小艺"  # Sherpa-onnx 唤醒词（逗号分隔）
     wake_word_model_path: str = ""     # Sherpa-onnx 模型路径（留空自动下载）
     auth_token: str = ""               # 预共享认证 token
-    wake_prompt_audio_path: str = "assets/wo_zai.wav"  # 唤醒提示音文件路径（"我在"）
+    wake_prompt_audio_path: str = "assets/wo_zai.mp3"  # 唤醒提示音文件路径（"我在"）
     wake_prompt_delay: float = 0.3     # 唤醒后等待用户后续语音的窗口期（秒）
     silence_threshold: float = 1.5     # 静音检测阈值（秒）
     sample_rate: int = 16000           # 音频采样率

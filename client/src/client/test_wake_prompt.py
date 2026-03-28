@@ -17,7 +17,7 @@ def _make_config(**overrides: object) -> ClientConfig:
         wake_word_access_key="key",
         wake_word_keyword_path="kw.ppn",
         wake_prompt_delay=0.3,
-        wake_prompt_audio_path="assets/wo_zai.wav",
+        wake_prompt_audio_path="assets/wo_zai.mp3",
     )
     defaults.update(overrides)
     return ClientConfig(**defaults)  # type: ignore[arg-type]
@@ -111,7 +111,7 @@ class TestNoVoice:
         handler = InterruptHandler(energy_threshold=500.0)
         player = AudioPlayer()
         player.play = AsyncMock()  # type: ignore[method-assign]
-        config = _make_config(wake_prompt_audio_path="assets/wo_zai.wav")
+        config = _make_config(wake_prompt_audio_path="assets/wo_zai.mp3")
 
         mock_stream = MagicMock()
         mock_stream.read = MagicMock(return_value=_silent_chunk())
@@ -124,7 +124,7 @@ class TestNoVoice:
         ):
             await handle_wake_prompt(handler, player, config)
 
-        mock_read.assert_called_once_with("assets/wo_zai.wav")
+        mock_read.assert_called_once_with("assets/wo_zai.mp3")
         player.play.assert_awaited_once_with(prompt_bytes)
 
 
