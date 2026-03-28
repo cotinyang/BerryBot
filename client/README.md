@@ -45,7 +45,7 @@ rm sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2
 
 # 2. 准备关键词文件
 echo "小艺小艺 @小艺小艺" > keywords_raw.txt
-sherpa-onnx-cli text2token \
+uv run sherpa-onnx-cli text2token \
   --tokens sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/tokens.txt \
   --tokens-type phone+ppinyin \
   --lexicon sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/en.phone \

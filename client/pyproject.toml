@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "websockets",
+    "certifi",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +24,9 @@ sherpa = [
     "sherpa-onnx",
     "onnxruntime",
     "numpy",
+    "click",
+    "sentencepiece",
+    "pypinyin",
     "pyaudio",
 ]
 

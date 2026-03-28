@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import ssl
 from typing import Callable
 
 import websockets
@@ -49,6 +50,17 @@ class WebSocketClient:
             return f"{self._server_url}{sep}token={self._auth_token}"
         return self._server_url
 
+    def _get_ssl_context(self) -> ssl.SSLContext | None:
+        """为 wss:// 连接创建 SSL 上下文。"""
+        if not self._server_url.startswith("wss"):
+            return None
+        try:
+            import certifi
+            ctx = ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            ctx = ssl.create_default_context()
+        return ctx
+
     async def connect(self) -> None:
         """连接到 WebSocket 服务端。
 
@@ -56,7 +68,8 @@ class WebSocketClient:
             ConnectionError: 连接失败时抛出。
         """
         try:
-            self._ws = await websockets.connect(self._connect_url)
+            ssl_ctx = self._get_ssl_context()
+            self._ws = await websockets.connect(self._connect_url, ssl=ssl_ctx)
             self._connected = True
             logger.info("Connected to server: %s", self._server_url)
         except Exception as exc:
@@ -236,7 +249,8 @@ class WebSocketClient:
             await asyncio.sleep(self._retry_interval)
 
             try:
-                self._ws = await websockets.connect(self._connect_url)
+                ssl_ctx = self._get_ssl_context()
+                self._ws = await websockets.connect(self._connect_url, ssl=ssl_ctx)
                 self._connected = True
                 logger.info("Reconnected to server on attempt %d", attempt)
 
