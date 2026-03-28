@@ -34,11 +34,25 @@ uv sync --extra porcupine
 
 ### Sherpa-onnx（默认，推荐）
 
-开源免费，直接传中文唤醒词，无需注册或训练模型：
+开源免费，需要下载预训练模型并准备关键词文件：
 
-```
+```bash
+# 1. 下载中文 KWS 模型
+cd BerryBot/client
+wget https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01.tar.bz2
+tar xf sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01.tar.bz2
+
+# 2. 准备关键词文件
+echo "小艺小艺 @小艺小艺" > keywords_raw.txt
+sherpa-onnx-cli text2token \
+  --tokens sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01/tokens.txt \
+  --tokens-type ppinyin \
+  keywords_raw.txt \
+  sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01/keywords.txt
+
+# 3. 配置
 WAKE_WORD_ENGINE=sherpa_onnx
-WAKE_WORD_KEYWORDS=小艺小艺
+WAKE_WORD_MODEL_PATH=sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01
 ```
 
 安装：`uv sync --extra sherpa`

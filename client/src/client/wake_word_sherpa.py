@@ -1,17 +1,32 @@
-"""唤醒词检测器：使用 sherpa-onnx keyword spotting。
+"""唤醒词检测器：使用 sherpa-onnx keyword spotter。
 
-sherpa-onnx 支持直接传中文文字作为关键词，无需训练模型文件。
+需要预先下载 KWS 模型并准备 keywords 文件。
+模型下载: https://k2-fsa.github.io/sherpa/onnx/kws/pretrained_models/index.html
+推荐中文模型: sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01
+
+keywords 文件需要用 sherpa-onnx-cli text2token 工具生成：
+  echo "小艺小艺 @小艺小艺" > keywords_raw.txt
+  sherpa-onnx-cli text2token --tokens tokens.txt --tokens-type ppinyin keywords_raw.txt keywords.txt
 """
 
 import asyncio
 import logging
 from collections.abc import Callable
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
 class SherpaWakeWordDetector:
-    """基于 sherpa-onnx 的唤醒词检测器。"""
+    """基于 sherpa-onnx KeywordSpotter 的唤醒词检测器。
+
+    需要配置 model_path 指向包含模型文件的目录，目录下应有：
+    - encoder-*.onnx
+    - decoder-*.onnx
+    - joiner-*.onnx
+    - tokens.txt
+    - keywords.txt (编码后的关键词文件)
+    """
 
     _MIC_RETRY_DELAY: float = 5.0
 
@@ -20,9 +35,10 @@ class SherpaWakeWordDetector:
         self._model_path = model_path
         self._listening = False
         self._callbacks: list[Callable[[], None]] = []
-        self._recognizer: object | None = None
+        self._kws: object | None = None
         self._pa: object | None = None
-        self._stream: object | None = None
+        self._stream_obj: object | None = None
+        self._audio_stream: object | None = None
         self._sample_rate = 16000
 
     def on_wake_word(self, callback: Callable[[], None]) -> None:
@@ -46,42 +62,35 @@ class SherpaWakeWordDetector:
             ) from e
 
         self._listening = True
-        self._recognizer = self._create_recognizer(sherpa_onnx)
+        self._kws = self._create_kws(sherpa_onnx)
+        self._stream_obj = self._kws.create_stream()  # type: ignore[union-attr]
 
         while self._listening:
             try:
                 if self._pa is None:
                     self._pa = pyaudio.PyAudio()
-                    self._stream = self._pa.open(
-                        format=pyaudio.paInt16,
+                    self._audio_stream = self._pa.open(
+                        format=pyaudio.paFloat32,
                         channels=1,
                         rate=self._sample_rate,
                         input=True,
                         frames_per_buffer=1024,
                     )
 
-                data = self._stream.read(1024, exception_on_overflow=False)  # type: ignore[union-attr]
-                stream = self._recognizer.create_stream()  # type: ignore[union-attr]
-                stream.accept_waveform(
-                    self._sample_rate,
-                    list(
-                        int.from_bytes(data[i : i + 2], "little", signed=True)
-                        for i in range(0, len(data), 2)
-                    ),
-                )
+                data = self._audio_stream.read(1024, exception_on_overflow=False)  # type: ignore[union-attr]
+                import numpy as np
+                samples = np.frombuffer(data, dtype=np.float32)
+                self._stream_obj.accept_waveform(self._sample_rate, samples)  # type: ignore[union-attr]
 
-                while self._recognizer.is_ready(stream):  # type: ignore[union-attr]
-                    self._recognizer.decode_stream(stream)  # type: ignore[union-attr]
+                while self._kws.is_ready(self._stream_obj):  # type: ignore[union-attr]
+                    self._kws.decode_stream(self._stream_obj)  # type: ignore[union-attr]
 
-                result = self._recognizer.get_result(stream)  # type: ignore[union-attr]
+                result = self._kws.get_result(self._stream_obj)  # type: ignore[union-attr]
                 if result and result.strip():
-                    keyword = result.strip().lower()
-                    for kw in self._keywords:
-                        if kw.lower() in keyword or keyword in kw.lower():
-                            logger.info("唤醒词已检测到: %s", keyword)
-                            for cb in self._callbacks:
-                                cb()
-                            break
+                    logger.info("唤醒词已检测到: %s", result.strip())
+                    self._kws.reset_stream(self._stream_obj)  # type: ignore[union-attr]
+                    for cb in self._callbacks:
+                        cb()
 
             except OSError as exc:
                 logger.error("麦克风访问错误: %s，%s 秒后重试", exc, self._MIC_RETRY_DELAY)
@@ -91,32 +100,71 @@ class SherpaWakeWordDetector:
 
             await asyncio.sleep(0)
 
-    def _create_recognizer(self, sherpa_onnx: object) -> object:
-        """创建 sherpa-onnx keyword spotter。"""
-        keywords_str = "/".join(self._keywords)
-        config = sherpa_onnx.KeywordSpotterConfig(  # type: ignore[attr-defined]
-            keywords_buf=keywords_str,
-        )
-        if self._model_path:
-            config.model_config.transducer.encoder = self._model_path
+    def _create_kws(self, sherpa_onnx: object) -> object:
+        """创建 sherpa-onnx KeywordSpotter。"""
+        model_dir = Path(self._model_path)
+        if not model_dir.exists():
+            raise RuntimeError(
+                f"sherpa-onnx 模型目录不存在: {model_dir}\n"
+                "请下载模型: https://k2-fsa.github.io/sherpa/onnx/kws/pretrained_models/index.html"
+            )
 
-        return sherpa_onnx.KeywordSpotter(config)  # type: ignore[attr-defined]
+        # 自动查找模型文件
+        encoder = self._find_file(model_dir, "encoder-*.onnx", "encoder*.onnx")
+        decoder = self._find_file(model_dir, "decoder-*.onnx", "decoder*.onnx")
+        joiner = self._find_file(model_dir, "joiner-*.onnx", "joiner*.onnx")
+        tokens = model_dir / "tokens.txt"
+        keywords_file = model_dir / "keywords.txt"
+
+        if not tokens.exists():
+            raise RuntimeError(f"tokens.txt 未找到: {tokens}")
+        if not keywords_file.exists():
+            raise RuntimeError(
+                f"keywords.txt 未找到: {keywords_file}\n"
+                "请用 sherpa-onnx-cli text2token 生成关键词文件"
+            )
+
+        logger.info(
+            "加载 sherpa-onnx KWS 模型: encoder=%s, keywords=%s",
+            encoder.name, keywords_file
+        )
+
+        return sherpa_onnx.KeywordSpotter(  # type: ignore[attr-defined]
+            tokens=str(tokens),
+            encoder=str(encoder),
+            decoder=str(decoder),
+            joiner=str(joiner),
+            num_threads=2,
+            keywords_file=str(keywords_file),
+            provider="cpu",
+        )
+
+    def _find_file(self, directory: Path, *patterns: str) -> Path:
+        """在目录中查找匹配的文件。"""
+        for pattern in patterns:
+            matches = list(directory.glob(pattern))
+            if matches:
+                return matches[0]
+        raise RuntimeError(
+            f"在 {directory} 中未找到匹配 {patterns} 的文件"
+        )
 
     async def stop_listening(self) -> None:
         """停止监听，释放资源。"""
         self._listening = False
         self._close_audio_stream()
-        self._recognizer = None
+        self._kws = None
+        self._stream_obj = None
 
     def _close_audio_stream(self) -> None:
         """关闭音频流。"""
-        if self._stream is not None:
+        if self._audio_stream is not None:
             try:
-                self._stream.stop_stream()  # type: ignore[union-attr]
-                self._stream.close()  # type: ignore[union-attr]
+                self._audio_stream.stop_stream()  # type: ignore[union-attr]
+                self._audio_stream.close()  # type: ignore[union-attr]
             except OSError:
                 pass
-            self._stream = None
+            self._audio_stream = None
 
         if self._pa is not None:
             self._pa.terminate()  # type: ignore[union-attr]

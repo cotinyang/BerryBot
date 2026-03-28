@@ -21,6 +21,8 @@ porcupine = [
 ]
 sherpa = [
     "sherpa-onnx",
+    "onnxruntime",
+    "numpy",
     "pyaudio",
 ]
 
