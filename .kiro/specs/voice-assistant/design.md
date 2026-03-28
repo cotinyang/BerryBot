@@ -13,12 +13,14 @@
 | 开发语言 | Python 3.11+ | 生态丰富，所有依赖库均有良好的 Python 支持 |
 | 包管理工具 | uv | 极快的 Python 包管理器，用于项目初始化、依赖管理和虚拟环境 |
 | 通信协议 | WebSocket | 支持全双工通信，适合实时音频流传输 |
-| 唤醒词引擎 | Porcupine (pvporcupine) | 轻量级，适合树莓派运行，离线检测 |
+| 唤醒词引擎 | Sherpa-onnx（默认）/ Porcupine（可选） | Sherpa-onnx 开源免费，直接传中文唤醒词；Porcupine 需要商业授权但检测精度高 |
 | 语音识别 | whisper.cpp (pywhispercpp) | Whisper 的 C/C++ 实现，推理速度快，内存占用低，通过 pywhispercpp 提供 Python binding |
 | AI Agent | AWS strands-agents | 需求指定，提供灵活的 Agent 编排能力 |
 | 语音合成 | edge-tts | 免费、高质量中文语音，异步接口 |
 | WebSocket 库 | websockets (Python) | 成熟的异步 WebSocket 库，客户端和服务端均可使用 |
 | 音频格式 | WAV (客户端录制) / MP3 (TTS 输出) | WAV 无损适合识别，MP3 压缩适合网络传输 |
+| 通信安全 | TLS (wss://) + 预共享 token | TLS 加密传输，token 认证客户端身份 |
+| 多模型支持 | strands 内置 GeminiModel + OpenAIModel | 原生支持 Gemini 和 OpenAI 兼容接口（国内模型），无需额外依赖 |
 
 ## 项目结构
 
@@ -35,9 +37,14 @@ voice-assistant/
 │           ├── audio_recorder.py
 │           ├── audio_player.py
 │           ├── interrupt_handler.py
+│           ├── wake_word.py          # 唤醒词工厂（根据配置选择引擎）
+│           ├── wake_word_porcupine.py  # Porcupine 唤醒词实现
+│           ├── wake_word_sherpa.py     # Sherpa-onnx 唤醒词实现
+│           ├── wake_prompt.py
 │           └── ws_client.py
 └── server/                    # 服务端（VPS Debian）
     ├── pyproject.toml         # uv 项目配置与依赖
+    ├── models.json            # 多模型配置
     ├── SOUL.md                # Agent 人格定义文件
     ├── MEMORY.md              # Agent 持久化记忆文件
     └── src/
@@ -48,6 +55,9 @@ voice-assistant/
             ├── speech_recognizer.py
             ├── ai_agent.py
             ├── memory_tools.py    # Agent 记忆读写工具
+            ├── model_manager.py   # 多模型管理器
+            ├── model_tools.py     # 模型切换工具
+            ├── session_tools.py   # 会话控制工具
             └── speech_synthesizer.py
 ```
 
@@ -96,8 +106,10 @@ stateDiagram-v2
     Standby --> Recording: 检测到唤醒词
     Recording --> WaitingResponse: 音频发送完成
     WaitingResponse --> Playing: 收到语音数据
-    Playing --> Standby: 播放完成
+    Playing --> Listening: 播放完成
     Playing --> Recording: 语音打断
+    Listening --> Recording: 检测到用户语音
+    Listening --> Standby: 超时/end_session指令
     Recording --> Standby: 发送失败
     WaitingResponse --> Standby: 超时/错误
     Standby --> OfflineStandby: 连接失败(3次重连)
@@ -110,8 +122,11 @@ stateDiagram-v2
 2. 用户说话 → 客户端录音 → 检测到静音 → 编码为 WAV → 通过 WebSocket 发送到服务端
 3. 服务端接收音频 → Whisper 识别为文字 → AI Agent 处理 → 生成回复文字
 4. 回复文字 → edge-tts 合成语音 → 通过 WebSocket 发送到客户端
-5. 客户端接收语音 → 播放 → 播放完成 → 返回待机状态
+5. 客户端接收语音 → 播放 → 播放完成 → 进入连续对话监听（LISTENING）
 6. 播放过程中用户说话 → 打断检测 → 停止播放 → 发送 interrupt 消息通知服务端 → 服务端停止合成/发送 → 客户端进入录音状态
+7. LISTENING 状态下用户继续说话 → 直接进入录音 → 重复步骤 2-5（连续对话）
+8. LISTENING 状态下超时未说话 → 播放结束提示音 → 返回 STANDBY → 重启唤醒词监听
+9. 用户说"退出" → Agent 调用 end_session → 服务端发送 command 指令 → 客户端播放结束音 → 返回 STANDBY
 
 ## 组件与接口
 
@@ -127,6 +142,7 @@ class ClientState(Enum):
     RECORDING = "recording"          # 录音中
     WAITING_RESPONSE = "waiting"     # 等待服务端响应
     PLAYING = "playing"              # 播放语音回复
+    LISTENING = "listening"          # 连续对话等待用户说话
     OFFLINE_STANDBY = "offline"      # 离线待机
 
 class StateMachine:
@@ -139,12 +155,22 @@ class StateMachine:
 
 #### WakeWordDetector（唤醒词检测器）
 
+可插拔设计，通过 `create_wake_word_detector(config)` 工厂函数根据配置选择引擎：
+
 ```python
-class WakeWordDetector:
-    def __init__(self, access_key: str, keyword_path: str) -> None: ...
+class WakeWordDetector(Protocol):
+    """唤醒词检测器协议（接口）。"""
+    def on_wake_word(self, callback: Callable[[], None]) -> None: ...
     async def start_listening(self) -> None: ...
     async def stop_listening(self) -> None: ...
-    def on_wake_word(self, callback: Callable[[], None]) -> None: ...
+
+# Porcupine 实现
+class PorcupineWakeWordDetector:
+    def __init__(self, access_key: str, keyword_path: str) -> None: ...
+
+# Sherpa-onnx 实现
+class SherpaWakeWordDetector:
+    def __init__(self, keywords: list[str], model_path: str = "") -> None: ...
 ```
 
 #### AudioRecorder（录音器）
@@ -190,18 +216,24 @@ class InterruptHandler:
 
 ```python
 class WebSocketClient:
-    def __init__(self, server_url: str, max_retries: int = 3, retry_interval: float = 5.0) -> None: ...
+    def __init__(self, server_url: str, max_retries: int = 3, retry_interval: float = 5.0, auth_token: str = "") -> None: ...
     async def connect(self) -> None: ...
     async def disconnect(self) -> None: ...
     async def send_audio(self, audio_data: bytes) -> None: ...
     async def send_interrupt(self) -> None:
         """发送语音打断通知给服务端"""
         ...
-    async def receive_audio(self) -> bytes: ...
+    async def receive_response(self) -> dict:
+        """接收服务端响应（语音、指令或错误），返回 {"type": "audio"|"command", "data": ..., "action": ...}"""
+        ...
+    async def receive_audio(self) -> bytes:
+        """向后兼容：接收语音数据"""
+        ...
     @property
     def is_connected(self) -> bool: ...
     def on_disconnect(self, callback: Callable[[], None]) -> None: ...
     def on_reconnect(self, callback: Callable[[], None]) -> None: ...
+    def on_connection_failed(self, callback: Callable[[], None]) -> None: ...
 ```
 
 ### 服务端组件
@@ -210,7 +242,7 @@ class WebSocketClient:
 
 ```python
 class WebSocketServer:
-    def __init__(self, host: str = "0.0.0.0", port: int = 8765) -> None: ...
+    def __init__(self, host: str = "0.0.0.0", port: int = 8765, auth_token: str = "", tls_cert_path: str = "", tls_key_path: str = "") -> None: ...
     async def start(self) -> None: ...
     async def stop(self) -> None: ...
     async def handle_client(self, websocket: WebSocketServerProtocol) -> None: ...
@@ -233,9 +265,9 @@ class SpeechRecognizer:
 
 ```python
 class AIAgent:
-    def __init__(self, soul_path: str = "SOUL.md", memory_path: str = "MEMORY.md") -> None: ...
+    def __init__(self, soul_path: str = "SOUL.md", memory_path: str = "MEMORY.md", tools: list = None, model_manager: ModelManager = None) -> None: ...
     async def process(self, text: str) -> str:
-        """处理用户文字输入，返回 AI 回复文字。处理前读取 MEMORY.md 作为上下文，处理后按需更新 MEMORY.md"""
+        """处理用户文字输入，返回 AI 回复文字或控制指令。处理前读取 MEMORY.md 作为上下文"""
         ...
     def _load_soul(self) -> str:
         """读取 SOUL.md 文件内容作为 Agent 的人格/系统提示"""
@@ -303,6 +335,13 @@ class SpeechSynthesizer:
     "type": "status",
     "status": "processing" | "synthesizing"
 }
+
+# 服务端 → 客户端：控制指令
+{
+    "type": "command",
+    "action": "end_session"
+}
+# 客户端收到后执行对应操作（如结束会话）
 ```
 
 ## 数据模型
@@ -313,8 +352,12 @@ class SpeechSynthesizer:
 @dataclass
 class ClientConfig:
     server_url: str                    # WebSocket 服务端地址
-    wake_word_access_key: str          # Porcupine 访问密钥
-    wake_word_keyword_path: str        # 唤醒词模型文件路径
+    wake_word_engine: str = "sherpa_onnx"  # 唤醒词引擎: "porcupine" | "sherpa_onnx"
+    wake_word_access_key: str = ""     # Porcupine 访问密钥
+    wake_word_keyword_path: str = ""   # Porcupine 唤醒词模型文件路径
+    wake_word_keywords: str = "小智小智"  # Sherpa-onnx 唤醒词（逗号分隔）
+    wake_word_model_path: str = ""     # Sherpa-onnx 模型路径（留空自动下载）
+    auth_token: str = ""               # 预共享认证 token
     wake_prompt_audio_path: str = "assets/wo_zai.wav"  # 唤醒提示音文件路径（"我在"）
     wake_prompt_delay: float = 0.3     # 唤醒后等待用户后续语音的窗口期（秒）
     silence_threshold: float = 1.5     # 静音检测阈值（秒）
@@ -322,6 +365,8 @@ class ClientConfig:
     energy_threshold: float = 500.0    # 语音能量阈值（用于打断检测）
     reconnect_interval: float = 5.0    # 重连间隔（秒）
     max_reconnect_retries: int = 3     # 最大重连次数
+    session_timeout: float = 5.0       # 连续对话超时（秒）
+    session_end_audio_path: str = "assets/end.wav"  # 会话结束提示音
 ```
 
 ### 服务端配置模型
@@ -336,6 +381,9 @@ class ServerConfig:
     tts_voice: str = "zh-CN-XiaoxiaoNeural"  # TTS 语音角色
     soul_path: str = "SOUL.md"         # Agent 人格定义文件路径
     memory_path: str = "MEMORY.md"     # Agent 记忆文件路径
+    auth_token: str = ""               # 预共享认证 token
+    tls_cert_path: str = ""            # TLS 证书文件路径
+    tls_key_path: str = ""             # TLS 私钥文件路径
 ```
 
 ### 音频数据模型
@@ -385,7 +433,7 @@ class WSStatusMessage(WSMessage):
 
 ### 属性 2：状态转换正确性
 
-*对于任意*客户端状态和触发事件的组合，状态机应按照以下规则进行转换：STANDBY + 唤醒词 → RECORDING；RECORDING + 发送完成 → WAITING_RESPONSE；WAITING_RESPONSE + 收到语音 → PLAYING；PLAYING + 播放完成 → STANDBY；PLAYING + 语音打断 → RECORDING；OFFLINE_STANDBY + 连接恢复 → STANDBY。任何不在此列表中的状态-事件组合不应导致状态变化。
+*对于任意*客户端状态和触发事件的组合，状态机应按照以下规则进行转换：STANDBY + 唤醒词 → RECORDING；RECORDING + 发送完成 → WAITING_RESPONSE；WAITING_RESPONSE + 收到语音 → PLAYING；PLAYING + 播放完成 → LISTENING；PLAYING + 语音打断 → RECORDING；LISTENING + 检测到语音 → RECORDING；LISTENING + 超时/end_session → STANDBY；OFFLINE_STANDBY + 连接恢复 → STANDBY。任何不在此列表中的状态-事件组合不应导致状态变化。
 
 **验证需求：1.2, 2.5, 6.3, 7.3, 8.5**
 

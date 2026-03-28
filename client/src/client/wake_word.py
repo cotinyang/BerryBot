@@ -1,112 +1,58 @@
-"""客户端唤醒词检测器：使用 pvporcupine 进行唤醒词检测。"""
+"""唤醒词检测器工厂：根据配置选择 Porcupine 或 Sherpa-onnx 引擎。"""
 
-import asyncio
+from __future__ import annotations
+
 import logging
-import struct
+from typing import TYPE_CHECKING, Protocol
 from collections.abc import Callable
+
+if TYPE_CHECKING:
+    from client.config import ClientConfig
 
 logger = logging.getLogger(__name__)
 
 
-class WakeWordDetector:
-    """唤醒词检测器，使用 pvporcupine 进行离线唤醒词检测。
+class WakeWordDetector(Protocol):
+    """唤醒词检测器协议（接口）。"""
 
-    pvporcupine 为可选依赖，仅在 start_listening 时延迟导入。
+    def on_wake_word(self, callback: Callable[[], None]) -> None: ...
+    async def start_listening(self) -> None: ...
+    async def stop_listening(self) -> None: ...
+
+
+def create_wake_word_detector(config: ClientConfig) -> WakeWordDetector:
+    """根据配置创建唤醒词检测器实例。
+
+    Args:
+        config: 客户端配置。
+
+    Returns:
+        WakeWordDetector 实例（Porcupine 或 Sherpa-onnx）。
     """
+    engine = config.wake_word_engine.lower()
 
-    _MIC_RETRY_DELAY: float = 5.0
-
-    def __init__(self, access_key: str, keyword_path: str) -> None:
-        self._access_key = access_key
-        self._keyword_path = keyword_path
-        self._listening = False
-        self._callbacks: list[Callable[[], None]] = []
-        self._porcupine: object | None = None
-        self._pa: object | None = None
-        self._stream: object | None = None
-
-    def on_wake_word(self, callback: Callable[[], None]) -> None:
-        """注册唤醒词检测回调。"""
-        self._callbacks.append(callback)
-
-    async def start_listening(self) -> None:
-        """开始监听唤醒词。延迟导入 pvporcupine 和 pyaudio。"""
-        try:
-            import pvporcupine  # type: ignore[import-untyped]
-        except ImportError as e:
-            raise RuntimeError(
-                "pvporcupine is required for wake word detection. "
-                "Install it with: pip install pvporcupine"
-            ) from e
-
-        try:
-            import pyaudio  # type: ignore[import-untyped]
-        except ImportError as e:
-            raise RuntimeError(
-                "pyaudio is required for wake word detection. "
-                "Install it with: pip install pyaudio"
-            ) from e
-
-        self._listening = True
-
-        self._porcupine = pvporcupine.create(
-            access_key=self._access_key,
-            keyword_paths=[self._keyword_path],
+    if engine == "porcupine":
+        from client.wake_word_porcupine import PorcupineWakeWordDetector
+        if not config.wake_word_access_key or not config.wake_word_keyword_path:
+            raise ValueError(
+                "Porcupine 引擎需要配置 WAKE_WORD_ACCESS_KEY 和 WAKE_WORD_KEYWORD_PATH"
+            )
+        logger.info("使用 Porcupine 唤醒词引擎")
+        return PorcupineWakeWordDetector(
+            access_key=config.wake_word_access_key,
+            keyword_path=config.wake_word_keyword_path,
         )
 
-        while self._listening:
-            try:
-                if self._pa is None:
-                    self._pa = pyaudio.PyAudio()
-                    self._stream = self._pa.open(
-                        format=pyaudio.paInt16,
-                        channels=1,
-                        rate=self._porcupine.sample_rate,
-                        input=True,
-                        frames_per_buffer=self._porcupine.frame_length,
-                    )
+    elif engine == "sherpa_onnx":
+        from client.wake_word_sherpa import SherpaWakeWordDetector
+        keywords = [kw.strip() for kw in config.wake_word_keywords.split(",") if kw.strip()]
+        if not keywords:
+            raise ValueError("Sherpa-onnx 引擎需要配置 WAKE_WORD_KEYWORDS")
+        logger.info("使用 Sherpa-onnx 唤醒词引擎, keywords=%s", keywords)
+        return SherpaWakeWordDetector(
+            keywords=keywords,
+            model_path=config.wake_word_model_path,
+        )
 
-                raw = self._stream.read(  # type: ignore[union-attr]
-                    self._porcupine.frame_length,
-                    exception_on_overflow=False,
-                )
-                pcm = struct.unpack_from(
-                    f"{self._porcupine.frame_length}h", raw
-                )
-                result = self._porcupine.process(pcm)
-
-                if result >= 0:
-                    logger.info("唤醒词已检测到")
-                    for cb in self._callbacks:
-                        cb()
-
-            except OSError as exc:
-                logger.error("麦克风访问错误: %s，%s 秒后重试", exc, self._MIC_RETRY_DELAY)
-                self._close_audio_stream()
-                await asyncio.sleep(self._MIC_RETRY_DELAY)
-                continue
-
-            await asyncio.sleep(0)
-
-    async def stop_listening(self) -> None:
-        """停止监听唤醒词，释放资源。"""
-        self._listening = False
-        self._close_audio_stream()
-
-        if self._porcupine is not None:
-            self._porcupine.delete()  # type: ignore[union-attr]
-            self._porcupine = None
-
-    def _close_audio_stream(self) -> None:
-        """关闭音频流和 PyAudio 实例。"""
-        if self._stream is not None:
-            try:
-                self._stream.stop_stream()  # type: ignore[union-attr]
-                self._stream.close()  # type: ignore[union-attr]
-            except OSError:
-                pass
-            self._stream = None
-
-        if self._pa is not None:
-            self._pa.terminate()  # type: ignore[union-attr]
-            self._pa = None
+    else:
+        raise ValueError(f"不支持的唤醒词引擎: {engine}，可选: porcupine, sherpa_onnx")

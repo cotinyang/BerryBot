@@ -8,7 +8,7 @@
 
 - **Client（客户端）**: 运行在树莓派 3B 上的语音交互终端程序，负责音频采集、播放和唤醒词检测
 - **Server（服务端）**: 运行在 VPS Debian 上的后端服务，负责语音识别、AI 处理和语音合成
-- **Wake_Word_Detector（唤醒词检测器）**: 客户端中负责持续监听麦克风输入并检测唤醒词的模块
+- **Wake_Word_Detector（唤醒词检测器）**: 客户端中负责持续监听麦克风输入并检测唤醒词的模块，支持 Sherpa-onnx（默认）和 Porcupine 两种引擎
 - **Audio_Recorder（录音器）**: 客户端中负责录制用户语音并编码为音频数据的模块
 - **Audio_Player（播放器）**: 客户端中负责接收和播放服务端返回的语音数据的模块
 - **Interrupt_Handler（打断处理器）**: 客户端中负责检测用户语音打断并中止当前播放的模块
@@ -89,7 +89,7 @@
 
 1. WHEN Client 接收到来自 Server 的语音数据, THE Audio_Player SHALL 立即开始播放该语音
 2. WHILE Audio_Player 正在播放语音, THE Client SHALL 处于播放状态
-3. WHEN Audio_Player 完成语音播放, THE Client SHALL 返回待机状态并重新启动 Wake_Word_Detector
+3. WHEN Audio_Player 完成语音播放, THE Client SHALL 进入连续对话监听状态（LISTENING），等待用户继续说话
 4. IF Audio_Player 在播放过程中遇到音频设备错误, THEN THE Client SHALL 记录错误日志并返回待机状态
 
 ### 需求 7：语音打断
@@ -114,3 +114,47 @@
 3. IF Communication_Channel 连接断开, THEN THE Client SHALL 每隔 5 秒自动尝试重新连接
 4. IF Communication_Channel 连接在 3 次重连尝试后仍未恢复, THEN THE Client SHALL 播放连接失败提示音并进入离线待机状态
 5. WHEN Communication_Channel 重新建立连接, THE Client SHALL 从离线待机状态恢复到正常待机状态
+
+### 需求 9：连续对话
+
+**用户故事：** 作为用户，我希望唤醒一次后可以连续对话，不用每句话都重新唤醒。
+
+#### 验收标准
+
+1. WHEN Audio_Player 完成语音播放, THE Client SHALL 进入 LISTENING 状态，持续监听麦克风等待用户继续说话
+2. WHILE Client 处于 LISTENING 状态, IF 检测到用户语音, THEN THE Client SHALL 切换到 RECORDING 状态开始新一轮录音
+3. WHILE Client 处于 LISTENING 状态, IF 超过配置的超时时间（默认 5 秒）未检测到用户语音, THEN THE Client SHALL 播放会话结束提示音并返回 STANDBY 状态
+4. WHEN Client 从 LISTENING 返回 STANDBY, THE Client SHALL 重新启动 Wake_Word_Detector
+
+### 需求 10：会话控制指令
+
+**用户故事：** 作为用户，我希望可以通过语音命令主动结束会话，而不用等超时。
+
+#### 验收标准
+
+1. WHEN 用户说出结束意图的话（如"退出"、"不聊了"、"拜拜"）, THE AI_Agent SHALL 调用 end_session 工具
+2. WHEN AI_Agent 调用 end_session 工具, THE Server SHALL 向 Client 发送 command 类型消息（action: end_session）
+3. WHEN Client 接收到 end_session 指令, THE Client SHALL 播放会话结束提示音并返回 STANDBY 状态
+
+### 需求 11：多模型支持
+
+**用户故事：** 作为用户，我希望可以在对话中切换不同的 AI 模型，以便选择最适合当前需求的模型。
+
+#### 验收标准
+
+1. THE Server SHALL 支持通过 models.json 配置文件预定义多个 LLM 模型（支持 Gemini 和 OpenAI 兼容接口）
+2. THE Server SHALL 在启动时加载默认模型
+3. WHEN 用户说"有哪些模型", THE AI_Agent SHALL 调用 list_models 工具列出所有可用模型
+4. WHEN 用户说"换成 xxx", THE AI_Agent SHALL 调用 switch_model 工具切换到指定模型
+5. WHEN 模型切换成功, THE AI_Agent SHALL 在下一轮对话中使用新模型
+
+### 需求 12：通信安全
+
+**用户故事：** 作为系统，我希望客户端和服务端之间的通信是加密和认证的，以防止未授权访问。
+
+#### 验收标准
+
+1. THE Server SHALL 支持通过 TLS 证书启用 wss:// 加密通信
+2. THE Server SHALL 支持通过预共享 token 进行客户端认证
+3. WHEN Client 连接时, THE Client SHALL 在 WebSocket URL 中携带认证 token
+4. IF Client 提供的 token 与 Server 配置不匹配, THEN THE Server SHALL 拒绝连接并关闭 WebSocket

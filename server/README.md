@@ -101,6 +101,18 @@ vim models.json
 - `MEMORY.md` — Agent 的持久化记忆。Agent 会自动记录用户偏好、重要事实等，跨对话保持连续性
 - `models.json` — 多模型配置。用户可以通过语音说"换成 deepseek"或"有哪些模型"来切换和查看模型
 
+## Agent 工具
+
+Agent 内置以下工具，会根据对话内容自主调用：
+
+| 工具 | 说明 |
+|------|------|
+| `read_memory` | 读取 MEMORY.md 中的记忆 |
+| `update_memory` | 更新 MEMORY.md，记录用户偏好/事实 |
+| `list_models` | 列出所有可用模型 |
+| `switch_model` | 切换当前使用的 AI 模型 |
+| `end_session` | 结束当前会话（用户说"退出"时触发） |
+
 ## 测试
 
 ```bash

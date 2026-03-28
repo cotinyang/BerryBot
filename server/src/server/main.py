@@ -72,6 +72,7 @@ async def run_server(config: ServerConfig) -> None:
     from server.memory_tools import create_memory_tools
     from server.model_manager import ModelManager, load_models_config
     from server.model_tools import create_model_tools
+    from server.session_tools import create_session_tools
     from server.speech_recognizer import SpeechRecognizer
     from server.speech_synthesizer import SpeechSynthesizer
     from server.ws_server import WebSocketServer
@@ -99,7 +100,8 @@ async def run_server(config: ServerConfig) -> None:
     # 创建工具
     memory_tools = create_memory_tools(config.memory_path)
     model_tools = create_model_tools(model_manager) if model_manager else []
-    all_tools = memory_tools + model_tools
+    session_tools = create_session_tools()
+    all_tools = memory_tools + model_tools + session_tools
 
     agent = AIAgent(
         soul_path=config.soul_path,

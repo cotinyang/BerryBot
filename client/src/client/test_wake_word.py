@@ -6,26 +6,26 @@ from unittest.mock import MagicMock, patch, AsyncMock
 
 import pytest
 
-from client.wake_word import WakeWordDetector
+from client.wake_word_porcupine import PorcupineWakeWordDetector
 
 
 @pytest.fixture
-def detector() -> WakeWordDetector:
-    return WakeWordDetector(access_key="test-key", keyword_path="/tmp/keyword.ppn")
+def detector() -> PorcupineWakeWordDetector:
+    return PorcupineWakeWordDetector(access_key="test-key", keyword_path="/tmp/keyword.ppn")
 
 
 # ── 初始化测试 ──────────────────────────────────────────────
 
 
 class TestInit:
-    def test_initial_state(self, detector: WakeWordDetector) -> None:
+    def test_initial_state(self, detector: PorcupineWakeWordDetector) -> None:
         """初始状态应为未监听。"""
         assert detector._listening is False
         assert detector._porcupine is None
         assert detector._pa is None
         assert detector._stream is None
 
-    def test_stores_config(self, detector: WakeWordDetector) -> None:
+    def test_stores_config(self, detector: PorcupineWakeWordDetector) -> None:
         """应保存 access_key 和 keyword_path。"""
         assert detector._access_key == "test-key"
         assert detector._keyword_path == "/tmp/keyword.ppn"
@@ -35,13 +35,13 @@ class TestInit:
 
 
 class TestOnWakeWord:
-    def test_register_callback(self, detector: WakeWordDetector) -> None:
+    def test_register_callback(self, detector: PorcupineWakeWordDetector) -> None:
         """注册回调后应存储在回调列表中。"""
         cb = MagicMock()
         detector.on_wake_word(cb)
         assert cb in detector._callbacks
 
-    def test_register_multiple_callbacks(self, detector: WakeWordDetector) -> None:
+    def test_register_multiple_callbacks(self, detector: PorcupineWakeWordDetector) -> None:
         """应支持注册多个回调。"""
         cb1 = MagicMock()
         cb2 = MagicMock()
@@ -55,14 +55,14 @@ class TestOnWakeWord:
 
 class TestStartListening:
     @pytest.mark.asyncio
-    async def test_import_error_pvporcupine(self, detector: WakeWordDetector) -> None:
+    async def test_import_error_pvporcupine(self, detector: PorcupineWakeWordDetector) -> None:
         """pvporcupine 未安装时应抛出 RuntimeError。"""
         with patch.dict("sys.modules", {"pvporcupine": None}):
             with pytest.raises(RuntimeError, match="pvporcupine is required"):
                 await detector.start_listening()
 
     @pytest.mark.asyncio
-    async def test_import_error_pyaudio(self, detector: WakeWordDetector) -> None:
+    async def test_import_error_pyaudio(self, detector: PorcupineWakeWordDetector) -> None:
         """pyaudio 未安装时应抛出 RuntimeError（pvporcupine 可用）。"""
         mock_porcupine_mod = MagicMock()
         with patch.dict("sys.modules", {"pvporcupine": mock_porcupine_mod, "pyaudio": None}):
@@ -102,7 +102,7 @@ class TestStartListening:
 
         mock_porcupine.process.side_effect = process_side_effect
 
-        detector = WakeWordDetector(access_key="key", keyword_path="/tmp/kw.ppn")
+        detector = PorcupineWakeWordDetector(access_key="key", keyword_path="/tmp/kw.ppn")
         cb1 = MagicMock()
         cb2 = MagicMock()
         detector.on_wake_word(cb1)
@@ -145,7 +145,7 @@ class TestStartListening:
         mock_stream.read.return_value = frame_bytes
         mock_porcupine.process.return_value = -1  # 未检测到
 
-        detector = WakeWordDetector(access_key="key", keyword_path="/tmp/kw.ppn")
+        detector = PorcupineWakeWordDetector(access_key="key", keyword_path="/tmp/kw.ppn")
         cb = MagicMock()
         detector.on_wake_word(cb)
 
@@ -196,7 +196,7 @@ class TestStartListening:
         mock_stream.read.side_effect = read_side_effect
         mock_porcupine.process.return_value = -1
 
-        detector = WakeWordDetector(access_key="key", keyword_path="/tmp/kw.ppn")
+        detector = PorcupineWakeWordDetector(access_key="key", keyword_path="/tmp/kw.ppn")
         # 使用较短的重试延迟以加速测试
         detector._MIC_RETRY_DELAY = 0.01
 
@@ -223,7 +223,7 @@ class TestStopListening:
     @pytest.mark.asyncio
     async def test_stop_releases_resources(self) -> None:
         """stop_listening 应释放 porcupine、stream 和 PyAudio 资源。"""
-        detector = WakeWordDetector(access_key="key", keyword_path="/tmp/kw.ppn")
+        detector = PorcupineWakeWordDetector(access_key="key", keyword_path="/tmp/kw.ppn")
 
         mock_porcupine = MagicMock()
         mock_stream = MagicMock()
@@ -248,14 +248,14 @@ class TestStopListening:
     @pytest.mark.asyncio
     async def test_stop_when_not_started(self) -> None:
         """未启动时调用 stop_listening 不应报错。"""
-        detector = WakeWordDetector(access_key="key", keyword_path="/tmp/kw.ppn")
+        detector = PorcupineWakeWordDetector(access_key="key", keyword_path="/tmp/kw.ppn")
         await detector.stop_listening()  # 不应抛出异常
         assert detector._listening is False
 
     @pytest.mark.asyncio
     async def test_stop_handles_stream_close_error(self) -> None:
         """关闭 stream 出错时不应抛出异常。"""
-        detector = WakeWordDetector(access_key="key", keyword_path="/tmp/kw.ppn")
+        detector = PorcupineWakeWordDetector(access_key="key", keyword_path="/tmp/kw.ppn")
 
         mock_porcupine = MagicMock()
         mock_stream = MagicMock()

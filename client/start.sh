@@ -25,8 +25,11 @@ fi
 # ── 配置 ──────────────────────────────────────────────
 SERVER_URL="${SERVER_URL:?SERVER_URL is required}"
 AUTH_TOKEN="${AUTH_TOKEN:?AUTH_TOKEN is required}"
-WAKE_WORD_ACCESS_KEY="${WAKE_WORD_ACCESS_KEY:?WAKE_WORD_ACCESS_KEY is required}"
-WAKE_WORD_KEYWORD_PATH="${WAKE_WORD_KEYWORD_PATH:?WAKE_WORD_KEYWORD_PATH is required}"
+WAKE_WORD_ENGINE="${WAKE_WORD_ENGINE:-sherpa_onnx}"
+WAKE_WORD_ACCESS_KEY="${WAKE_WORD_ACCESS_KEY:-}"
+WAKE_WORD_KEYWORD_PATH="${WAKE_WORD_KEYWORD_PATH:-}"
+WAKE_WORD_KEYWORDS="${WAKE_WORD_KEYWORDS:-小智小智}"
+WAKE_WORD_MODEL_PATH="${WAKE_WORD_MODEL_PATH:-}"
 WAKE_PROMPT_AUDIO="${WAKE_PROMPT_AUDIO:-assets/wo_zai.wav}"
 WAKE_PROMPT_DELAY="${WAKE_PROMPT_DELAY:-0.3}"
 SILENCE_THRESHOLD="${SILENCE_THRESHOLD:-1.5}"
@@ -34,6 +37,8 @@ SAMPLE_RATE="${SAMPLE_RATE:-16000}"
 ENERGY_THRESHOLD="${ENERGY_THRESHOLD:-500.0}"
 RECONNECT_INTERVAL="${RECONNECT_INTERVAL:-5.0}"
 MAX_RECONNECT_RETRIES="${MAX_RECONNECT_RETRIES:-3}"
+SESSION_TIMEOUT="${SESSION_TIMEOUT:-5.0}"
+SESSION_END_AUDIO="${SESSION_END_AUDIO:-assets/end.wav}"
 
 # ── 函数 ──────────────────────────────────────────────
 
@@ -60,8 +65,11 @@ do_start() {
     nohup uv run python -m client.main \
         --server-url "$SERVER_URL" \
         --auth-token "$AUTH_TOKEN" \
+        --wake-word-engine "$WAKE_WORD_ENGINE" \
         --wake-word-access-key "$WAKE_WORD_ACCESS_KEY" \
         --wake-word-keyword-path "$WAKE_WORD_KEYWORD_PATH" \
+        --wake-word-keywords "$WAKE_WORD_KEYWORDS" \
+        --wake-word-model-path "$WAKE_WORD_MODEL_PATH" \
         --wake-prompt-audio-path "$WAKE_PROMPT_AUDIO" \
         --wake-prompt-delay "$WAKE_PROMPT_DELAY" \
         --silence-threshold "$SILENCE_THRESHOLD" \
@@ -69,6 +77,8 @@ do_start() {
         --energy-threshold "$ENERGY_THRESHOLD" \
         --reconnect-interval "$RECONNECT_INTERVAL" \
         --max-reconnect-retries "$MAX_RECONNECT_RETRIES" \
+        --session-timeout "$SESSION_TIMEOUT" \
+        --session-end-audio-path "$SESSION_END_AUDIO" \
         >> "$LOG_FILE" 2>&1 &
 
     local pid=$!

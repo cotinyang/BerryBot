@@ -13,7 +13,14 @@ dependencies = [
 
 [project.optional-dependencies]
 hardware = [
+    "pyaudio",
+]
+porcupine = [
     "pvporcupine",
+    "pyaudio",
+]
+sherpa = [
+    "sherpa-onnx",
     "pyaudio",
 ]
 

@@ -120,10 +120,61 @@ class WebSocketClient:
             await self._handle_disconnect()
             raise ConnectionError(f"Failed to send interrupt: {exc}") from exc
 
-    async def receive_audio(self) -> bytes:
-        """接收服务端返回的语音数据。
+    async def receive_response(self) -> dict:
+        """接收服务端返回的响应（语音或指令）。
 
-        等待接收 JSON 元数据消息，然后接收二进制音频帧。
+        Returns:
+            dict with keys:
+            - type: "audio" | "command" | "status"
+            - data: bytes (for audio) or None
+            - action: str (for command, e.g. "end_session")
+
+        Raises:
+            ConnectionError: 未连接或接收失败时抛出。
+            RuntimeError: 服务端返回错误时抛出。
+        """
+        if not self.is_connected or self._ws is None:
+            raise ConnectionError("Not connected to server")
+
+        try:
+            # 跳过 status 消息，等待实际响应
+            while True:
+                raw = await self._ws.recv()
+                metadata = json.loads(raw)
+                msg_type = metadata.get("type")
+
+                if msg_type == "status":
+                    logger.debug("Server status: %s", metadata.get("status"))
+                    continue
+
+                if msg_type == "error":
+                    code = metadata.get("code", "unknown")
+                    msg = metadata.get("message", "Unknown error")
+                    raise RuntimeError(f"Server error [{code}]: {msg}")
+
+                if msg_type == "command":
+                    action = metadata.get("action", "")
+                    logger.info("Received command from server: %s", action)
+                    return {"type": "command", "action": action, "data": None}
+
+                if msg_type == "audio_response":
+                    audio_data = await self._ws.recv()
+                    if not isinstance(audio_data, bytes):
+                        raise RuntimeError("Expected binary audio frame")
+                    return {"type": "audio", "action": "", "data": audio_data}
+
+                logger.warning("Unknown response type: %s", msg_type)
+                continue
+
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            logger.error("Failed to receive response: %s", exc)
+            await self._handle_disconnect()
+            raise ConnectionError(f"Failed to receive response: {exc}") from exc
+
+    async def receive_audio(self) -> bytes:
+        """接收服务端返回的语音数据（向后兼容）。
 
         Returns:
             MP3 格式的音频字节数据。
@@ -131,29 +182,10 @@ class WebSocketClient:
         Raises:
             ConnectionError: 未连接或接收失败时抛出。
         """
-        if not self.is_connected or self._ws is None:
-            raise ConnectionError("Not connected to server")
-
-        try:
-            raw = await self._ws.recv()
-            metadata = json.loads(raw)
-
-            if metadata.get("type") == "error":
-                code = metadata.get("code", "unknown")
-                msg = metadata.get("message", "Unknown error")
-                raise RuntimeError(f"Server error [{code}]: {msg}")
-
-            audio_data = await self._ws.recv()
-            if not isinstance(audio_data, bytes):
-                raise RuntimeError("Expected binary audio frame")
-
-            return audio_data
-        except RuntimeError:
-            raise
-        except Exception as exc:
-            logger.error("Failed to receive audio: %s", exc)
-            await self._handle_disconnect()
-            raise ConnectionError(f"Failed to receive audio: {exc}") from exc
+        response = await self.receive_response()
+        if response["type"] == "command":
+            raise RuntimeError(f"Unexpected command: {response['action']}")
+        return response["data"]
 
     def on_disconnect(self, callback: Callable[[], None]) -> None:
         """注册断开连接回调。

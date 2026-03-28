@@ -14,6 +14,7 @@ class ClientState(Enum):
     RECORDING = "recording"  # 录音中
     WAITING_RESPONSE = "waiting"  # 等待服务端响应
     PLAYING = "playing"  # 播放语音回复
+    LISTENING = "listening"  # 连续对话等待用户说话
     OFFLINE_STANDBY = "offline"  # 离线待机
 
 
@@ -22,7 +23,8 @@ _VALID_TRANSITIONS: dict[ClientState, set[ClientState]] = {
     ClientState.STANDBY: {ClientState.RECORDING, ClientState.OFFLINE_STANDBY},
     ClientState.RECORDING: {ClientState.WAITING_RESPONSE, ClientState.STANDBY},
     ClientState.WAITING_RESPONSE: {ClientState.PLAYING, ClientState.STANDBY},
-    ClientState.PLAYING: {ClientState.STANDBY, ClientState.RECORDING},
+    ClientState.PLAYING: {ClientState.LISTENING, ClientState.RECORDING, ClientState.STANDBY},
+    ClientState.LISTENING: {ClientState.RECORDING, ClientState.STANDBY},
     ClientState.OFFLINE_STANDBY: {ClientState.STANDBY},
 }
 

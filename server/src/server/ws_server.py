@@ -247,6 +247,14 @@ class WebSocketServer:
                 await self._send_error(websocket, "agent_error", f"AI Agent 处理错误: {e}")
                 return
 
+            # Step 3.5: Check if Agent returned a command instead of text
+            from server.session_tools import is_command, parse_command
+            if is_command(response_text):
+                action = parse_command(response_text)
+                logger.info("Agent 返回指令: %s", action)
+                await self._send_command(websocket, action)
+                return
+
             # Step 4: Send "synthesizing" status
             await self._send_status(websocket, "synthesizing")
 
@@ -291,6 +299,23 @@ class WebSocketServer:
             await websocket.send(status_msg)
         except Exception as exc:
             logger.warning("Failed to send status to client: %s", exc)
+
+    async def _send_command(
+        self, websocket: ServerConnection, action: str, **kwargs: str
+    ) -> None:
+        """向客户端发送控制指令。
+
+        Args:
+            websocket: 客户端连接。
+            action: 指令名称（如 "end_session"）。
+            **kwargs: 额外参数。
+        """
+        msg = {"type": "command", "action": action, **kwargs}
+        try:
+            await websocket.send(json.dumps(msg))
+            logger.info("Command sent to %s: %s", websocket.remote_address, action)
+        except Exception as exc:
+            logger.warning("Failed to send command to client: %s", exc)
 
     async def _send_error(
         self, websocket: ServerConnection, code: str, message: str

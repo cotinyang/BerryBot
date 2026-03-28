@@ -14,8 +14,8 @@ def _make_config(**overrides) -> ClientConfig:
     """创建测试用 ClientConfig。"""
     defaults = {
         "server_url": "ws://localhost:8765",
-        "wake_word_access_key": "test-key",
-        "wake_word_keyword_path": "/tmp/keyword.ppn",
+        "wake_word_engine": "sherpa_onnx",
+        "wake_word_keywords": "小智小智",
     }
     defaults.update(overrides)
     return ClientConfig(**defaults)
@@ -25,18 +25,14 @@ class TestParseArgs:
     def test_required_args(self):
         config = parse_args([
             "--server-url", "ws://host:8765",
-            "--wake-word-access-key", "key123",
-            "--wake-word-keyword-path", "/path/to/kw.ppn",
         ])
         assert config.server_url == "ws://host:8765"
-        assert config.wake_word_access_key == "key123"
-        assert config.wake_word_keyword_path == "/path/to/kw.ppn"
+        assert config.wake_word_engine == "sherpa_onnx"
+        assert config.wake_word_keywords == "小智小智"
 
     def test_default_values(self):
         config = parse_args([
             "--server-url", "ws://host:8765",
-            "--wake-word-access-key", "k",
-            "--wake-word-keyword-path", "/kw.ppn",
         ])
         assert config.wake_prompt_audio_path == "assets/wo_zai.wav"
         assert config.wake_prompt_delay == 0.3
@@ -49,7 +45,8 @@ class TestParseArgs:
     def test_custom_values(self):
         config = parse_args([
             "--server-url", "ws://host:9999",
-            "--wake-word-access-key", "k",
+            "--wake-word-engine", "porcupine",
+            "--wake-word-access-key", "key123",
             "--wake-word-keyword-path", "/kw.ppn",
             "--silence-threshold", "2.0",
             "--energy-threshold", "800.0",
@@ -122,13 +119,13 @@ class TestStop:
 
 
 class TestCallbacks:
-    def test_on_playback_complete_transitions_to_standby(self):
+    def test_on_playback_complete_transitions_to_listening(self):
         config = _make_config()
         client = VoiceAssistantClient(config)
         # Force state to PLAYING
         client._state_machine._state = ClientState.PLAYING
         client._on_playback_complete()
-        assert client.state_machine.state == ClientState.STANDBY
+        assert client.state_machine.state == ClientState.LISTENING
 
     def test_on_playback_complete_ignored_if_not_playing(self):
         config = _make_config()
@@ -171,18 +168,21 @@ class TestCallbacks:
 class TestHandleInteraction:
     @pytest.mark.asyncio
     async def test_full_interaction_flow(self):
-        """测试完整交互流程：唤醒 → 提示音 → 录音 → 发送 → 等待 → 播放 → 待机。"""
+        """测试完整交互流程：唤醒 → 提示音 → 录音 → 发送 → 等待 → 播放。"""
         config = _make_config()
         client = VoiceAssistantClient(config)
 
         # Mock all components
         with patch("client.main.handle_wake_prompt", new_callable=AsyncMock, return_value=False):
+            client._wake_word_detector.stop_listening = AsyncMock()
             client._audio_recorder.start_recording = AsyncMock()
             client._audio_recorder.stop_recording = AsyncMock(return_value=b"wav-data")
             client._ws_client._connected = True
             client._ws_client._ws = MagicMock()
             client._ws_client.send_audio = AsyncMock()
-            client._ws_client.receive_audio = AsyncMock(return_value=b"mp3-data")
+            client._ws_client.receive_response = AsyncMock(
+                return_value={"type": "audio", "action": "", "data": b"mp3-data"}
+            )
             client._audio_player.play = AsyncMock()
             client._interrupt_handler.start_monitoring = AsyncMock()
             client._interrupt_handler.stop_monitoring = AsyncMock()
@@ -191,7 +191,7 @@ class TestHandleInteraction:
 
             client._audio_recorder.start_recording.assert_awaited_once()
             client._ws_client.send_audio.assert_awaited_once_with(b"wav-data")
-            client._ws_client.receive_audio.assert_awaited_once()
+            client._ws_client.receive_response.assert_awaited_once()
             client._audio_player.play.assert_awaited_once_with(b"mp3-data")
 
     @pytest.mark.asyncio
@@ -199,15 +199,19 @@ class TestHandleInteraction:
         """通信错误时应返回待机状态。"""
         config = _make_config()
         client = VoiceAssistantClient(config)
+        client._wake_word_detector.stop_listening = AsyncMock()
+        client._wake_word_detector.start_listening = AsyncMock()
 
         with patch("client.main.handle_wake_prompt", new_callable=AsyncMock, return_value=False):
             client._audio_recorder.start_recording = AsyncMock()
             client._audio_recorder.stop_recording = AsyncMock(return_value=b"wav-data")
-            # Not connected
             client._ws_client._connected = False
             client._ws_client._ws = None
+            client._audio_player.play = AsyncMock()
 
             await client._handle_interaction()
+
+            assert client.state_machine.state == ClientState.STANDBY
 
             assert client.state_machine.state == ClientState.STANDBY
 
@@ -216,6 +220,8 @@ class TestHandleInteraction:
         """服务端错误时应返回待机状态。"""
         config = _make_config()
         client = VoiceAssistantClient(config)
+        client._wake_word_detector.stop_listening = AsyncMock()
+        client._wake_word_detector.start_listening = AsyncMock()
 
         with patch("client.main.handle_wake_prompt", new_callable=AsyncMock, return_value=False):
             client._audio_recorder.start_recording = AsyncMock()
@@ -223,9 +229,10 @@ class TestHandleInteraction:
             client._ws_client._connected = True
             client._ws_client._ws = MagicMock()
             client._ws_client.send_audio = AsyncMock()
-            client._ws_client.receive_audio = AsyncMock(
+            client._ws_client.receive_response = AsyncMock(
                 side_effect=RuntimeError("Server error [agent_error]: 处理失败")
             )
+            client._audio_player.play = AsyncMock()
 
             await client._handle_interaction()
 
@@ -248,7 +255,9 @@ class TestHandleInterrupt:
         client._audio_recorder.start_recording = AsyncMock()
         client._audio_recorder.stop_recording = AsyncMock(return_value=b"new-wav")
         client._ws_client.send_audio = AsyncMock()
-        client._ws_client.receive_audio = AsyncMock(return_value=b"new-mp3")
+        client._ws_client.receive_response = AsyncMock(
+            return_value={"type": "audio", "action": "", "data": b"new-mp3"}
+        )
         client._audio_player.play = AsyncMock()
         client._interrupt_handler.start_monitoring = AsyncMock()
 
@@ -265,8 +274,10 @@ class TestHandleInterrupt:
         config = _make_config()
         client = VoiceAssistantClient(config)
         client._state_machine._state = ClientState.PLAYING
+        client._wake_word_detector.start_listening = AsyncMock()
 
         client._audio_player.stop = AsyncMock()
+        client._audio_player.play = AsyncMock()
         client._interrupt_handler.stop_monitoring = AsyncMock()
         client._ws_client._connected = True
         client._ws_client._ws = MagicMock()
