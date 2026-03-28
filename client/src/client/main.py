@@ -432,6 +432,7 @@ class VoiceAssistantClient:
     async def start(self) -> None:
         """启动客户端：连接服务端并开始唤醒词监听。"""
         self._running = True
+        self._stop_event = asyncio.Event()
         logger.info("语音助手客户端启动中...")
 
         # 连接服务端
@@ -442,12 +443,25 @@ class VoiceAssistantClient:
             logger.warning("初始连接失败，进入离线待机")
             self._state_machine.transition(ClientState.OFFLINE_STANDBY)
 
-        # 启动唤醒词监听（阻塞式主循环）
+        # 启动唤醒词监听（后台任务）
         logger.info("开始唤醒词监听...")
-        try:
-            await self._wake_word_detector.start_listening()
-        except Exception:
-            logger.exception("唤醒词监听异常退出")
+        asyncio.ensure_future(self._run_wake_word())
+
+        # 保持事件循环运行，直到 stop() 被调用
+        await self._stop_event.wait()
+
+    async def _run_wake_word(self) -> None:
+        """运行唤醒词监听，异常时自动重启。"""
+        while self._running:
+            try:
+                await self._wake_word_detector.start_listening()
+                # start_listening 正常返回意味着被 stop_listening 停止了，
+                # 等待一下再检查是否需要重启（避免忙循环）
+                await asyncio.sleep(0.1)
+            except Exception:
+                logger.exception("唤醒词监听异常")
+                if self._running:
+                    await asyncio.sleep(1)
 
     async def stop(self) -> None:
         """优雅关闭客户端，释放所有资源。"""
@@ -459,6 +473,9 @@ class VoiceAssistantClient:
         await self._audio_player.stop()
         await self._interrupt_handler.stop_monitoring()
         await self._ws_client.disconnect()
+
+        if hasattr(self, '_stop_event'):
+            self._stop_event.set()
 
         logger.info("语音助手客户端已关闭")
 

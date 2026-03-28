@@ -42,4 +42,6 @@ dev = [
 ]
 
 [[tool.uv.index]]
+name = "tsinghua"
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+explicit = true

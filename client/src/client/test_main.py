@@ -83,7 +83,11 @@ class TestStartAndConnect:
         client._ws_client.connect = AsyncMock()
         client._wake_word_detector.start_listening = AsyncMock()
 
-        await client.start()
+        # start() blocks on _stop_event, so run it as a task and stop quickly
+        task = asyncio.create_task(client.start())
+        await asyncio.sleep(0.05)
+        await client.stop()
+        await task
 
         client._ws_client.connect.assert_awaited_once()
 
@@ -94,7 +98,10 @@ class TestStartAndConnect:
         client._ws_client.connect = AsyncMock(side_effect=ConnectionError("refused"))
         client._wake_word_detector.start_listening = AsyncMock()
 
-        await client.start()
+        task = asyncio.create_task(client.start())
+        await asyncio.sleep(0.05)
+        await client.stop()
+        await task
 
         assert client.state_machine.state == ClientState.OFFLINE_STANDBY
 
