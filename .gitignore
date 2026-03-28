@@ -4,3 +4,4 @@ openclaw/
 .env
 __pycache__/
 *.pyc
+uv.lock
