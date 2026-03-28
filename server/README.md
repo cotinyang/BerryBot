@@ -24,6 +24,12 @@
 uv sync
 ```
 
+国内网络如果 uv sync 慢，pyproject.toml 已配置清华镜像源，也可以手动指定：
+
+```bash
+uv sync --index-url https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
 whisper.cpp 需要单独编译，参考 [pywhispercpp 文档](https://github.com/abarber/pywhispercpp)。
 
 ## 配置

@@ -28,6 +28,12 @@ uv sync --extra sherpa
 uv sync --extra porcupine
 ```
 
+国内网络如果 uv sync 慢，pyproject.toml 已配置清华镜像源，也可以手动指定：
+
+```bash
+uv sync --extra sherpa --index-url https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
 ## 唤醒词配置
 
 支持两种唤醒词引擎，通过 `WAKE_WORD_ENGINE` 配置切换：
