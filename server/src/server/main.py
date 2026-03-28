@@ -66,8 +66,6 @@ def parse_args(argv: list[str] | None = None) -> ServerConfig:
 
 async def run_server(config: ServerConfig) -> None:
     """根据配置创建组件并启动服务。"""
-    import json
-
     from server.ai_agent import AIAgent
     from server.memory_tools import create_memory_tools
     from server.model_manager import ModelManager, load_models_config
@@ -84,16 +82,7 @@ async def run_server(config: ServerConfig) -> None:
 
     # 加载模型配置
     models_config_path = getattr(config, "_models_config", "models.json")
-    models = load_models_config(models_config_path)
-    default_model = ""
-    try:
-        from pathlib import Path
-        mc_path = Path(models_config_path)
-        if mc_path.exists():
-            mc_data = json.loads(mc_path.read_text(encoding="utf-8"))
-            default_model = mc_data.get("default_model", "")
-    except Exception:
-        pass
+    models, default_model = load_models_config(models_config_path)
 
     model_manager = ModelManager(models=models, default_model=default_model) if models else None
 
