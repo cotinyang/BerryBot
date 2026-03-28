@@ -355,7 +355,7 @@ class ClientConfig:
     wake_word_engine: str = "sherpa_onnx"  # 唤醒词引擎: "porcupine" | "sherpa_onnx"
     wake_word_access_key: str = ""     # Porcupine 访问密钥
     wake_word_keyword_path: str = ""   # Porcupine 唤醒词模型文件路径
-    wake_word_keywords: str = "小智小智"  # Sherpa-onnx 唤醒词（逗号分隔）
+    wake_word_keywords: str = "小艺小艺"  # Sherpa-onnx 唤醒词（逗号分隔）
     wake_word_model_path: str = ""     # Sherpa-onnx 模型路径（留空自动下载）
     auth_token: str = ""               # 预共享认证 token
     wake_prompt_audio_path: str = "assets/wo_zai.wav"  # 唤醒提示音文件路径（"我在"）

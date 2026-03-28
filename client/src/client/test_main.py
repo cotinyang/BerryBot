@@ -15,7 +15,7 @@ def _make_config(**overrides) -> ClientConfig:
     defaults = {
         "server_url": "ws://localhost:8765",
         "wake_word_engine": "sherpa_onnx",
-        "wake_word_keywords": "小智小智",
+        "wake_word_keywords": "小艺小艺",
     }
     defaults.update(overrides)
     return ClientConfig(**defaults)
@@ -28,7 +28,7 @@ class TestParseArgs:
         ])
         assert config.server_url == "ws://host:8765"
         assert config.wake_word_engine == "sherpa_onnx"
-        assert config.wake_word_keywords == "小智小智"
+        assert config.wake_word_keywords == "小艺小艺"
 
     def test_default_values(self):
         config = parse_args([

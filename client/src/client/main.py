@@ -48,8 +48,8 @@ def parse_args(argv: list[str] | None = None) -> ClientConfig:
     )
     parser.add_argument(
         "--wake-word-keywords",
-        default="小智小智",
-        help="唤醒词列表，逗号分隔（仅 sherpa_onnx 引擎，默认: 小智小智）",
+        default="小艺小艺",
+        help="唤醒词列表，逗号分隔（仅 sherpa_onnx 引擎，默认: 小艺小艺）",
     )
     parser.add_argument(
         "--wake-word-model-path",

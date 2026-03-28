@@ -38,7 +38,7 @@ uv sync --extra porcupine
 
 ```
 WAKE_WORD_ENGINE=sherpa_onnx
-WAKE_WORD_KEYWORDS=小智小智
+WAKE_WORD_KEYWORDS=小艺小艺
 ```
 
 安装：`uv sync --extra sherpa`
@@ -48,7 +48,7 @@ WAKE_WORD_KEYWORDS=小智小智
 需要 [Picovoice](https://console.picovoice.ai/) 账号（公司邮箱注册），训练 `.ppn` 模型文件：
 
 1. 注册 Picovoice Console，获取 Access Key
-2. 创建自定义唤醒词（"小智小智"），选择 Raspberry Pi 平台，训练并下载 `.ppn` 文件
+2. 创建自定义唤醒词（"小艺小艺"），选择 Raspberry Pi 平台，训练并下载 `.ppn` 文件
 3. 配置：
 
 ```
@@ -78,7 +78,7 @@ vim .env
 | 配置项 | 说明 |
 |--------|------|
 | `WAKE_WORD_ENGINE` | 唤醒词引擎：`sherpa_onnx`（默认）或 `porcupine` |
-| `WAKE_WORD_KEYWORDS` | sherpa_onnx 唤醒词，逗号分隔（默认: 小智小智） |
+| `WAKE_WORD_KEYWORDS` | sherpa_onnx 唤醒词，逗号分隔（默认: 小艺小艺） |
 | `WAKE_WORD_ACCESS_KEY` | Porcupine Access Key（仅 porcupine 引擎） |
 | `WAKE_WORD_KEYWORD_PATH` | Porcupine .ppn 模型路径（仅 porcupine 引擎） |
 
@@ -110,7 +110,7 @@ vim .env
 
 ## 交互流程
 
-1. 说出唤醒词（"小智小智"）
+1. 说出唤醒词（"小艺小艺"）
 2. 听到"我在"提示音（如果你说完唤醒词后直接继续说话，会跳过提示音）
 3. 说出你的问题
 4. 等待回复播放
