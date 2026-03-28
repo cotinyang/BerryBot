@@ -109,10 +109,10 @@ class SherpaWakeWordDetector:
                 "请下载模型: https://k2-fsa.github.io/sherpa/onnx/kws/pretrained_models/index.html"
             )
 
-        # 自动查找模型文件
-        encoder = self._find_file(model_dir, "encoder-*.onnx", "encoder*.onnx")
-        decoder = self._find_file(model_dir, "decoder-*.onnx", "decoder*.onnx")
-        joiner = self._find_file(model_dir, "joiner-*.onnx", "joiner*.onnx")
+        # 自动查找模型文件（优先 int8 版本，树莓派上更快更省内存）
+        encoder = self._find_file(model_dir, "encoder-*.int8.onnx", "encoder-*.onnx")
+        decoder = self._find_file(model_dir, "decoder-*.onnx")
+        joiner = self._find_file(model_dir, "joiner-*.int8.onnx", "joiner-*.onnx")
         tokens = model_dir / "tokens.txt"
         keywords_file = model_dir / "keywords.txt"
 

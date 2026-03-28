@@ -37,22 +37,24 @@ uv sync --extra porcupine
 开源免费，需要下载预训练模型并准备关键词文件：
 
 ```bash
-# 1. 下载中文 KWS 模型
+# 1. 下载中英文 KWS 模型（2025-12-20 版）
 cd BerryBot/client
-wget https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01.tar.bz2
-tar xf sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01.tar.bz2
+wget https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2
+tar xf sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2
+rm sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2
 
 # 2. 准备关键词文件
 echo "小艺小艺 @小艺小艺" > keywords_raw.txt
 sherpa-onnx-cli text2token \
-  --tokens sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01/tokens.txt \
-  --tokens-type ppinyin \
+  --tokens sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/tokens.txt \
+  --tokens-type phone+ppinyin \
+  --lexicon sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/en.phone \
   keywords_raw.txt \
-  sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01/keywords.txt
+  sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/keywords.txt
 
-# 3. 配置
+# 3. 配置 .env
 WAKE_WORD_ENGINE=sherpa_onnx
-WAKE_WORD_MODEL_PATH=sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01
+WAKE_WORD_MODEL_PATH=sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20
 ```
 
 安装：`uv sync --extra sherpa`
