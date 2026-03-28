@@ -1,1 +1,6 @@
 openclaw/
+*.pid
+*.log
+.env
+__pycache__/
+*.pyc

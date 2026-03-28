@@ -1,0 +1,25 @@
+[project]
+name = "server"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Cotin_Yang", email = "Cotin_Yang@trendmicro.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "edge-tts",
+    "pywhispercpp",
+    "strands-agents",
+    "websockets",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.11,<0.11.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=0.23",
+]
