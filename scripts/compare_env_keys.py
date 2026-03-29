@@ -92,7 +92,7 @@ def append_missing_entries(
 
     Returns number of entries appended.
     """
-    lines_to_append = [sample_entries[key] for key in missing_keys if key in sample_entries]
+    lines_to_append = build_missing_lines(sample_entries, missing_keys)
     if not lines_to_append:
         return 0
 
