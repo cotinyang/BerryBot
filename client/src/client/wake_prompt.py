@@ -5,6 +5,7 @@
 - 无后续语音 → 播放预制提示音（"我在"）
 """
 
+import asyncio
 import logging
 import sys
 
@@ -46,6 +47,7 @@ async def handle_wake_prompt(
     interrupt_handler: InterruptHandler,
     audio_player: AudioPlayer,
     config: ClientConfig,
+    wait_for_prompt_playback: bool = True,
 ) -> bool:
     """唤醒后智能提示音处理。
 
@@ -57,6 +59,8 @@ async def handle_wake_prompt(
         audio_player: 用于播放提示音的播放器。
         config: 客户端配置，提供 ``wake_prompt_delay`` 和
             ``wake_prompt_audio_path``。
+        wait_for_prompt_playback: 是否等待提示音播放完成后再返回。
+            默认 True；为 False 时提示音后台播放，函数立即返回。
 
     Returns:
         ``True`` 表示检测到后续语音（跳过提示音，应直接录音）；
@@ -98,11 +102,21 @@ async def handle_wake_prompt(
                 pass
         pa.terminate()
 
+    async def _play_prompt_background(prompt_data: bytes) -> None:
+        try:
+            await audio_player.play(prompt_data)
+        except Exception:
+            logger.exception("播放唤醒提示音失败")
+
     # 窗口期内未检测到语音，播放提示音
     logger.info("唤醒后未检测到后续语音，播放提示音")
     try:
         prompt_data = _read_prompt_file(config.wake_prompt_audio_path)
-        await audio_player.play(prompt_data)
+        if wait_for_prompt_playback:
+            await _play_prompt_background(prompt_data)
+        else:
+            logger.info("提示音后台播放中，立即进入录音")
+            asyncio.create_task(_play_prompt_background(prompt_data))
     except Exception:
         logger.exception("播放唤醒提示音失败")
 

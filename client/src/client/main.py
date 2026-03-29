@@ -348,6 +348,7 @@ class VoiceAssistantClient:
                 self._interrupt_handler,
                 self._audio_player,
                 self._config,
+                wait_for_prompt_playback=False,
             )
 
             # 4. 录音 → 发送 → 等待 → 播放

@@ -234,7 +234,7 @@ class TestHandleInteraction:
         client = VoiceAssistantClient(config)
 
         # Mock all components
-        with patch("client.main.handle_wake_prompt", new_callable=AsyncMock, return_value=False):
+        with patch("client.main.handle_wake_prompt", new_callable=AsyncMock, return_value=False) as mock_wake_prompt:
             client._wake_word_detector.stop_listening = AsyncMock()
             client._audio_recorder.start_recording = AsyncMock()
             client._audio_recorder.stop_recording = AsyncMock(return_value=b"wav-data")
@@ -250,6 +250,12 @@ class TestHandleInteraction:
 
             await client._handle_interaction()
 
+            mock_wake_prompt.assert_awaited_once_with(
+                client._interrupt_handler,
+                client._audio_player,
+                config,
+                wait_for_prompt_playback=False,
+            )
             client._audio_recorder.start_recording.assert_awaited_once()
             client._ws_client.send_audio.assert_awaited_once_with(b"wav-data")
             client._ws_client.receive_response.assert_awaited_once()

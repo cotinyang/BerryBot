@@ -1,6 +1,8 @@
 """ModelManager 单元测试。"""
 
 import json
+import sys
+from types import ModuleType
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -172,3 +174,32 @@ class TestLoadModelsConfig:
         models, default = load_models_config(str(path))
         assert models == []
         assert default == ""
+
+
+class TestCreateGeminiModel:
+    def test_proxy_passed_via_http_options_client_args(self):
+        captured: dict[str, object] = {}
+
+        class FakeGeminiModel:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+        fake_module = ModuleType("strands.models.gemini")
+        fake_module.GeminiModel = FakeGeminiModel
+
+        with patch.dict(sys.modules, {"strands.models.gemini": fake_module}):
+            mgr = ModelManager(models=[])
+            cfg = ModelConfig(
+                name="gemini-flash",
+                provider="gemini",
+                model_id="gemini-2.5-flash",
+                api_key="k",
+                proxy="http://127.0.0.1:40000",
+            )
+            mgr._create_gemini_model(cfg)
+
+        assert captured["model_id"] == "gemini-2.5-flash"
+        assert captured["client_args"] == {
+            "api_key": "k",
+            "http_options": {"client_args": {"proxy": "http://127.0.0.1:40000"}},
+        }

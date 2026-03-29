@@ -208,7 +208,9 @@ class ModelManager:
         if config.api_key:
             client_args["api_key"] = config.api_key
         if config.proxy:
-            client_args["http_options"] = {"proxy": config.proxy}
+            # google-genai 的 HttpOptions 不接受顶层 proxy，
+            # 需要通过 client_args 透传给底层 httpx.Client。
+            client_args["http_options"] = {"client_args": {"proxy": config.proxy}}
             logger.info("Gemini 模型 %s 使用代理: %s", config.name, config.proxy)
 
         return GeminiModel(
