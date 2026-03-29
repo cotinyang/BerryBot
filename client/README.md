@@ -114,12 +114,18 @@ vim .env
 | `MAX_RECORDING_DURATION` | `10.0` | 单次录音最长时长（秒） |
 | `SAMPLE_RATE` | `16000` | 音频采样率 |
 | `ENERGY_THRESHOLD` | `500.0` | 语音能量阈值 |
+| `ENABLE_GENTLE_TRIM` | `true` | 是否启用录音首尾温和静音裁剪 |
+| `TRIM_FRAME_MS` | `20` | 温和静音裁剪分析帧长（毫秒） |
+| `TRIM_MIN_SILENCE_SEC` | `0.35` | 触发首尾裁剪所需最小静音时长（秒） |
+| `TRIM_PADDING_SEC` | `0.25` | 首尾裁剪时保留缓冲时长（秒） |
+| `TRIM_ENERGY_RATIO` | `0.6` | 裁剪静音阈值倍率（`ENERGY_THRESHOLD * ratio`） |
 | `USE_WEBRTC_VAD` | `true` | 是否启用 WebRTC VAD 辅助打断判断 |
 | `WEBRTC_VAD_MODE` | `2` | WebRTC VAD 灵敏度（0 最宽松，3 最严格） |
 | `INTERRUPT_GRACE_PERIOD` | `0.8` | 播放开始后忽略打断检测时长（秒） |
 | `INTERRUPT_MIN_VOICE_DURATION` | `0.3` | 触发打断所需连续语音时长（秒） |
 | `RECONNECT_INTERVAL` | `5.0` | 断线重连间隔（秒） |
 | `MAX_RECONNECT_RETRIES` | `3` | 最大重连次数 |
+| `WS_MAX_MESSAGE_SIZE` | `8388608` | WebSocket 单条消息最大字节数（用于避免 1009 message too big） |
 | `SESSION_TIMEOUT` | `5.0` | 连续对话超时（秒），超时后结束会话 |
 | `SESSION_END_AUDIO` | `assets/end.wav` | 会话结束提示音文件 |
 | `AUDIO_PLAYER_COMMAND` | 空 | 自定义播放器命令，支持 `{file}` 占位符 |

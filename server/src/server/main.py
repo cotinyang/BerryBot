@@ -32,6 +32,18 @@ def parse_args(argv: list[str] | None = None) -> ServerConfig:
         default=defaults.tts_voice,
         help="TTS 语音角色",
     )
+    parser.add_argument(
+        "--tts-sentence-stream",
+        action=argparse.BooleanOptionalAction,
+        default=defaults.tts_sentence_stream,
+        help="是否按句分段进行 TTS 流式合成（默认: 启用）",
+    )
+    parser.add_argument(
+        "--tts-sentence-max-chars",
+        type=int,
+        default=defaults.tts_sentence_max_chars,
+        help="按句模式下单段最大字符数（默认: 80）",
+    )
     parser.add_argument("--soul-path", default=defaults.soul_path, help="SOUL.md 路径")
     parser.add_argument(
         "--memory-path", default=defaults.memory_path, help="MEMORY.md 路径"
@@ -59,6 +71,8 @@ def parse_args(argv: list[str] | None = None) -> ServerConfig:
         port=args.port,
         whisper_model_size=args.whisper_model,
         tts_voice=args.tts_voice,
+        tts_sentence_stream=args.tts_sentence_stream,
+        tts_sentence_max_chars=args.tts_sentence_max_chars,
         soul_path=args.soul_path,
         memory_path=args.memory_path,
         auth_token=args.auth_token,
@@ -108,7 +122,11 @@ async def run_server(config: ServerConfig) -> None:
         )
     else:
         logger.warning("Debug mode enabled: bypassing AI Agent, ASR text will be sent to TTS")
-    synthesizer = SpeechSynthesizer(voice=config.tts_voice)
+    synthesizer = SpeechSynthesizer(
+        voice=config.tts_voice,
+        sentence_stream=config.tts_sentence_stream,
+        sentence_max_chars=config.tts_sentence_max_chars,
+    )
 
     server = WebSocketServer(
         host=config.host,
@@ -135,12 +153,13 @@ async def run_server(config: ServerConfig) -> None:
     await server.start()
     protocol = "wss" if config.tls_cert_path else "ws"
     logger.info(
-        "服务已启动 %s://%s:%d  (whisper=%s, voice=%s, bypass_agent=%s)",
+        "服务已启动 %s://%s:%d  (whisper=%s, voice=%s, sentence_stream=%s, bypass_agent=%s)",
         protocol,
         config.host,
         config.port,
         config.whisper_model_size,
         config.tts_voice,
+        config.tts_sentence_stream,
         config.debug_bypass_agent,
     )
 

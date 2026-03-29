@@ -28,12 +28,14 @@ class WebSocketClient:
         retry_interval: float = 5.0,
         auth_token: str = "",
         receive_timeout: float = 30.0,
+        max_message_size: int = 8 * 1024 * 1024,
     ) -> None:
         self._server_url = server_url
         self._max_retries = max_retries
         self._retry_interval = retry_interval
         self._auth_token = auth_token
         self._receive_timeout = receive_timeout
+        self._max_message_size = max_message_size
         self._ws: ClientConnection | None = None
         self._connected = False
         self._disconnect_callbacks: list[Callable[[], None]] = []
@@ -72,9 +74,17 @@ class WebSocketClient:
         """
         try:
             ssl_ctx = self._get_ssl_context()
-            self._ws = await websockets.connect(self._connect_url, ssl=ssl_ctx)
+            self._ws = await websockets.connect(
+                self._connect_url,
+                ssl=ssl_ctx,
+                max_size=self._max_message_size,
+            )
             self._connected = True
-            logger.info("Connected to server: %s", self._server_url)
+            logger.info(
+                "Connected to server: %s (max_message_size=%s)",
+                self._server_url,
+                self._max_message_size,
+            )
         except Exception as exc:
             self._connected = False
             self._ws = None
@@ -332,7 +342,11 @@ class WebSocketClient:
 
             try:
                 ssl_ctx = self._get_ssl_context()
-                self._ws = await websockets.connect(self._connect_url, ssl=ssl_ctx)
+                self._ws = await websockets.connect(
+                    self._connect_url,
+                    ssl=ssl_ctx,
+                    max_size=self._max_message_size,
+                )
                 self._connected = True
                 logger.info("Reconnected to server on attempt %d", attempt)
 

@@ -44,6 +44,17 @@ class TestConnect:
                 await client.connect()
             assert client.is_connected is False
 
+    @pytest.mark.asyncio
+    async def test_connect_sets_max_size(self, mock_ws):
+        client = WebSocketClient(
+            server_url="ws://localhost:8765",
+            max_message_size=16 * 1024 * 1024,
+        )
+        with patch("client.ws_client.websockets.connect", new_callable=AsyncMock, return_value=mock_ws) as mock_connect:
+            await client.connect()
+            assert mock_connect.await_count == 1
+            assert mock_connect.await_args.kwargs["max_size"] == 16 * 1024 * 1024
+
 
 class TestDisconnect:
     @pytest.mark.asyncio

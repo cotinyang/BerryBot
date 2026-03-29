@@ -24,6 +24,11 @@ class AudioRecorder:
         max_recording_duration: float = 10.0,
         sample_rate: int = 16000,
         energy_threshold: float = 500.0,
+        enable_gentle_trim: bool = True,
+        trim_frame_ms: int = 20,
+        trim_min_silence_sec: float = 0.35,
+        trim_padding_sec: float = 0.25,
+        trim_energy_ratio: float = 0.6,
     ) -> None:
         self.silence_threshold = silence_threshold
         self.max_recording_duration = max_recording_duration
@@ -37,6 +42,11 @@ class AudioRecorder:
         self._pa: object | None = None
         self._stream: object | None = None
         self._level_log_interval_sec = 2.0
+        self._trim_enabled = enable_gentle_trim
+        self._trim_frame_ms = trim_frame_ms
+        self._trim_min_silence_sec = trim_min_silence_sec
+        self._trim_padding_sec = trim_padding_sec
+        self._trim_energy_ratio = trim_energy_ratio
 
     def _should_stop_recording(
         self,
@@ -145,7 +155,8 @@ class AudioRecorder:
         raw_audio = b"".join(self._frames)
         self._frames = []
         logger.info("录音结束: %d bytes raw PCM", len(raw_audio))
-        return self.encode_wav(raw_audio, self.sample_rate)
+        trimmed_audio = self._gentle_trim_silence(raw_audio)
+        return self.encode_wav(trimmed_audio, self.sample_rate)
 
     def encode_wav(self, raw_audio: bytes, sample_rate: int) -> bytes:
         """将原始 PCM 音频数据编码为 WAV 格式。
@@ -207,3 +218,71 @@ class AudioRecorder:
 
         samples = struct.unpack(f"<{num_samples}h", audio_chunk[: num_samples * self._sample_width])
         return max(abs(sample) for sample in samples)
+
+    def _gentle_trim_silence(self, raw_audio: bytes) -> bytes:
+        """温和裁剪首尾静音，保留前后缓冲，避免切碎语音。"""
+        if not self._trim_enabled or not raw_audio:
+            return raw_audio
+
+        bytes_per_second = self.sample_rate * self._channels * self._sample_width
+        frame_bytes = (bytes_per_second * self._trim_frame_ms) // 1000
+        if frame_bytes <= 0 or len(raw_audio) <= frame_bytes:
+            return raw_audio
+
+        frame_count = len(raw_audio) // frame_bytes
+        if frame_count == 0:
+            return raw_audio
+
+        rms_threshold = self.energy_threshold * self._trim_energy_ratio
+        frame_is_silent: list[bool] = []
+        for idx in range(frame_count):
+            start = idx * frame_bytes
+            end = start + frame_bytes
+            frame = raw_audio[start:end]
+            frame_is_silent.append(self._compute_rms(frame) < rms_threshold)
+
+        first_voice_idx = -1
+        last_voice_idx = -1
+        for idx, is_silent in enumerate(frame_is_silent):
+            if not is_silent:
+                first_voice_idx = idx
+                break
+        for idx in range(frame_count - 1, -1, -1):
+            if not frame_is_silent[idx]:
+                last_voice_idx = idx
+                break
+
+        if first_voice_idx < 0 or last_voice_idx < 0:
+            return raw_audio
+
+        frame_sec = self._trim_frame_ms / 1000.0
+        leading_silence_sec = first_voice_idx * frame_sec
+        trailing_silence_sec = (frame_count - 1 - last_voice_idx) * frame_sec
+
+        pad_frames = max(1, int(self._trim_padding_sec / frame_sec))
+        start_idx = 0
+        end_idx = frame_count
+
+        if leading_silence_sec >= self._trim_min_silence_sec:
+            start_idx = max(0, first_voice_idx - pad_frames)
+        if trailing_silence_sec >= self._trim_min_silence_sec:
+            end_idx = min(frame_count, last_voice_idx + 1 + pad_frames)
+
+        if start_idx == 0 and end_idx == frame_count:
+            return raw_audio
+
+        trimmed = raw_audio[start_idx * frame_bytes:end_idx * frame_bytes]
+
+        min_kept_sec = 0.4
+        if len(trimmed) < int(bytes_per_second * min_kept_sec):
+            return raw_audio
+
+        logger.info(
+            "温和静音裁剪: raw=%.2fs -> trimmed=%.2fs (lead=%.2fs, tail=%.2fs, pad=%.2fs)",
+            len(raw_audio) / bytes_per_second,
+            len(trimmed) / bytes_per_second,
+            leading_silence_sec,
+            trailing_silence_sec,
+            self._trim_padding_sec,
+        )
+        return trimmed

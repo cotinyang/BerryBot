@@ -30,6 +30,8 @@ HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8765}"
 WHISPER_MODEL="${WHISPER_MODEL:-base}"
 TTS_VOICE="${TTS_VOICE:-zh-CN-XiaoxiaoNeural}"
+TTS_SENTENCE_STREAM="${TTS_SENTENCE_STREAM:-1}"
+TTS_SENTENCE_MAX_CHARS="${TTS_SENTENCE_MAX_CHARS:-80}"
 SOUL_PATH="${SOUL_PATH:-SOUL.md}"
 MEMORY_PATH="${MEMORY_PATH:-MEMORY.md}"
 DEBUG_BYPASS_AGENT="${DEBUG_BYPASS_AGENT:-0}"
@@ -61,6 +63,13 @@ do_start() {
         extra_args+=(--debug-bypass-agent)
         echo "  Debug: bypass AI Agent enabled (ASR -> TTS)"
     fi
+    if [ "$TTS_SENTENCE_STREAM" = "1" ] || [ "$TTS_SENTENCE_STREAM" = "true" ] || [ "$TTS_SENTENCE_STREAM" = "TRUE" ]; then
+        extra_args+=(--tts-sentence-stream)
+        echo "  TTS sentence stream enabled"
+    else
+        extra_args+=(--no-tts-sentence-stream)
+        echo "  TTS sentence stream disabled"
+    fi
 
     nohup uv run python -m server.main \
         --host "$HOST" \
@@ -70,6 +79,7 @@ do_start() {
         --auth-token "$AUTH_TOKEN" \
         --whisper-model "$WHISPER_MODEL" \
         --tts-voice "$TTS_VOICE" \
+        --tts-sentence-max-chars "$TTS_SENTENCE_MAX_CHARS" \
         --soul-path "$SOUL_PATH" \
         --memory-path "$MEMORY_PATH" \
         "${extra_args[@]}" \

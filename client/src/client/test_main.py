@@ -40,12 +40,18 @@ class TestParseArgs:
         assert config.max_recording_duration == 10.0
         assert config.sample_rate == 16000
         assert config.energy_threshold == 500.0
+        assert config.enable_gentle_trim is True
+        assert config.trim_frame_ms == 20
+        assert config.trim_min_silence_sec == 0.35
+        assert config.trim_padding_sec == 0.25
+        assert config.trim_energy_ratio == 0.6
         assert config.use_webrtc_vad is True
         assert config.webrtc_vad_mode == 2
         assert config.interrupt_grace_period == 0.8
         assert config.interrupt_min_voice_duration == 0.3
         assert config.reconnect_interval == 5.0
         assert config.max_reconnect_retries == 3
+        assert config.ws_max_message_size == 8 * 1024 * 1024
 
     def test_custom_values(self):
         config = parse_args([
@@ -56,22 +62,34 @@ class TestParseArgs:
             "--silence-threshold", "2.0",
             "--max-recording-duration", "8.0",
             "--energy-threshold", "800.0",
+            "--no-enable-gentle-trim",
+            "--trim-frame-ms", "30",
+            "--trim-min-silence-sec", "0.5",
+            "--trim-padding-sec", "0.4",
+            "--trim-energy-ratio", "0.7",
             "--webrtc-vad-mode", "3",
             "--no-use-webrtc-vad",
             "--interrupt-grace-period", "1.0",
             "--interrupt-min-voice-duration", "0.5",
             "--reconnect-interval", "10.0",
             "--max-reconnect-retries", "5",
+            "--ws-max-message-size", "16777216",
         ])
         assert config.silence_threshold == 2.0
         assert config.max_recording_duration == 8.0
         assert config.energy_threshold == 800.0
+        assert config.enable_gentle_trim is False
+        assert config.trim_frame_ms == 30
+        assert config.trim_min_silence_sec == 0.5
+        assert config.trim_padding_sec == 0.4
+        assert config.trim_energy_ratio == 0.7
         assert config.use_webrtc_vad is False
         assert config.webrtc_vad_mode == 3
         assert config.interrupt_grace_period == 1.0
         assert config.interrupt_min_voice_duration == 0.5
         assert config.reconnect_interval == 10.0
         assert config.max_reconnect_retries == 5
+        assert config.ws_max_message_size == 16777216
 
     def test_missing_required_args_exits(self):
         with pytest.raises(SystemExit):

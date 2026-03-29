@@ -19,6 +19,10 @@ class TestSpeechSynthesizerInit:
         synth = SpeechSynthesizer(voice="en-US-AriaNeural")
         assert synth._voice == "en-US-AriaNeural"
 
+    def test_default_sentence_stream_enabled(self):
+        synth = SpeechSynthesizer()
+        assert synth._sentence_stream is True
+
 
 class TestSynthesize:
     """synthesize 方法测试。"""
@@ -136,3 +140,37 @@ class TestSynthesize:
         with patch("server.speech_synthesizer.edge_tts.Communicate", return_value=mock_communicate) as mock_cls:
             await synth.synthesize("你好")
             mock_cls.assert_called_once_with("你好", "zh-CN-XiaoxiaoNeural")
+
+    @pytest.mark.asyncio
+    async def test_sentence_stream_calls_communicate_per_segment(self):
+        synth = SpeechSynthesizer(sentence_stream=True)
+        calls: list[str] = []
+
+        def make_communicate(text: str, _voice: str):
+            calls.append(text)
+            mock_communicate = MagicMock()
+
+            async def fake_stream():
+                yield {"type": "audio", "data": b"\x00"}
+
+            mock_communicate.stream = fake_stream
+            return mock_communicate
+
+        with patch("server.speech_synthesizer.edge_tts.Communicate", side_effect=make_communicate):
+            result = await synth.synthesize("第一句。第二句！")
+
+        assert result == b"\x00\x00"
+        assert calls == ["第一句。", "第二句！"]
+
+
+class TestSentenceSplit:
+    def test_split_text_segments_by_punctuation(self):
+        synth = SpeechSynthesizer(sentence_stream=True)
+        segments = synth._split_text_segments("你好。今天天气不错！那就出门吧？")
+        assert segments == ["你好。", "今天天气不错！", "那就出门吧？"]
+
+    def test_split_text_segments_long_sentence(self):
+        synth = SpeechSynthesizer(sentence_stream=True, sentence_max_chars=20)
+        segments = synth._split_text_segments("这是一个很长很长很长很长很长很长的句子，没有标点但是需要切开")
+        assert len(segments) >= 2
+        assert all(len(segment) <= 20 for segment in segments)

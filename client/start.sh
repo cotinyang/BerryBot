@@ -36,12 +36,18 @@ SILENCE_THRESHOLD="${SILENCE_THRESHOLD:-1.5}"
 MAX_RECORDING_DURATION="${MAX_RECORDING_DURATION:-10.0}"
 SAMPLE_RATE="${SAMPLE_RATE:-16000}"
 ENERGY_THRESHOLD="${ENERGY_THRESHOLD:-500.0}"
+ENABLE_GENTLE_TRIM="${ENABLE_GENTLE_TRIM:-true}"
+TRIM_FRAME_MS="${TRIM_FRAME_MS:-20}"
+TRIM_MIN_SILENCE_SEC="${TRIM_MIN_SILENCE_SEC:-0.35}"
+TRIM_PADDING_SEC="${TRIM_PADDING_SEC:-0.25}"
+TRIM_ENERGY_RATIO="${TRIM_ENERGY_RATIO:-0.6}"
 USE_WEBRTC_VAD="${USE_WEBRTC_VAD:-true}"
 WEBRTC_VAD_MODE="${WEBRTC_VAD_MODE:-2}"
 INTERRUPT_GRACE_PERIOD="${INTERRUPT_GRACE_PERIOD:-0.8}"
 INTERRUPT_MIN_VOICE_DURATION="${INTERRUPT_MIN_VOICE_DURATION:-0.3}"
 RECONNECT_INTERVAL="${RECONNECT_INTERVAL:-5.0}"
 MAX_RECONNECT_RETRIES="${MAX_RECONNECT_RETRIES:-3}"
+WS_MAX_MESSAGE_SIZE="${WS_MAX_MESSAGE_SIZE:-8388608}"
 SESSION_TIMEOUT="${SESSION_TIMEOUT:-5.0}"
 SESSION_END_AUDIO="${SESSION_END_AUDIO:-assets/end.wav}"
 AUDIO_PLAYER_COMMAND="${AUDIO_PLAYER_COMMAND:-}"
@@ -101,6 +107,21 @@ do_start() {
             ;;
     esac
 
+    local enable_gentle_trim_normalized
+    enable_gentle_trim_normalized="$(printf '%s' "$ENABLE_GENTLE_TRIM" | tr '[:upper:]' '[:lower:]')"
+    case "$enable_gentle_trim_normalized" in
+        1|true|yes|on)
+            extra_args+=(--enable-gentle-trim)
+            ;;
+        0|false|no|off)
+            extra_args+=(--no-enable-gentle-trim)
+            ;;
+        *)
+            echo "Invalid ENABLE_GENTLE_TRIM: ${ENABLE_GENTLE_TRIM}. Expected true/false"
+            exit 1
+            ;;
+    esac
+
     nohup uv run python -m client.main \
         --server-url "$SERVER_URL" \
         --auth-token "$AUTH_TOKEN" \
@@ -115,11 +136,16 @@ do_start() {
         --max-recording-duration "$MAX_RECORDING_DURATION" \
         --sample-rate "$SAMPLE_RATE" \
         --energy-threshold "$ENERGY_THRESHOLD" \
+        --trim-frame-ms "$TRIM_FRAME_MS" \
+        --trim-min-silence-sec "$TRIM_MIN_SILENCE_SEC" \
+        --trim-padding-sec "$TRIM_PADDING_SEC" \
+        --trim-energy-ratio "$TRIM_ENERGY_RATIO" \
         --webrtc-vad-mode "$WEBRTC_VAD_MODE" \
         --interrupt-grace-period "$INTERRUPT_GRACE_PERIOD" \
         --interrupt-min-voice-duration "$INTERRUPT_MIN_VOICE_DURATION" \
         --reconnect-interval "$RECONNECT_INTERVAL" \
         --max-reconnect-retries "$MAX_RECONNECT_RETRIES" \
+        --ws-max-message-size "$WS_MAX_MESSAGE_SIZE" \
         --session-timeout "$SESSION_TIMEOUT" \
         --session-end-audio-path "$SESSION_END_AUDIO" \
         "${extra_args[@]}" \

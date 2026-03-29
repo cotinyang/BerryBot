@@ -167,3 +167,45 @@ class TestStopRecordingCondition:
             total_duration_sec=0.9,
         )
         assert should_stop is False
+
+
+class TestGentleSilenceTrim:
+    def _pcm(self, value: int, samples: int) -> bytes:
+        return struct.pack(f"<{samples}h", *([value] * samples))
+
+    def test_trims_leading_and_trailing_silence(self) -> None:
+        recorder = AudioRecorder(sample_rate=16000, energy_threshold=500.0)
+        sr = recorder.sample_rate
+
+        leading = self._pcm(0, int(sr * 0.7))
+        voice = self._pcm(2500, int(sr * 0.6))
+        trailing = self._pcm(0, int(sr * 0.8))
+        raw = leading + voice + trailing
+
+        trimmed = recorder._gentle_trim_silence(raw)
+
+        assert len(trimmed) < len(raw)
+        # 保留前后缓冲后，结果时长应仍明显大于纯语音段
+        assert len(trimmed) > len(voice)
+
+    def test_keeps_middle_pause(self) -> None:
+        recorder = AudioRecorder(sample_rate=16000, energy_threshold=500.0)
+        sr = recorder.sample_rate
+
+        leading = self._pcm(0, int(sr * 0.6))
+        voice1 = self._pcm(2500, int(sr * 0.3))
+        middle_pause = self._pcm(0, int(sr * 0.5))
+        voice2 = self._pcm(2600, int(sr * 0.3))
+        trailing = self._pcm(0, int(sr * 0.6))
+        raw = leading + voice1 + middle_pause + voice2 + trailing
+
+        trimmed = recorder._gentle_trim_silence(raw)
+
+        # 中间停顿不应被裁掉，因此结果长度应大于两段语音总和
+        assert len(trimmed) > len(voice1 + voice2)
+
+    def test_returns_original_when_all_silence(self) -> None:
+        recorder = AudioRecorder(sample_rate=16000, energy_threshold=500.0)
+        raw = self._pcm(0, int(recorder.sample_rate * 1.0))
+        trimmed = recorder._gentle_trim_silence(raw)
+        assert trimmed == raw

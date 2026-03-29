@@ -12,6 +12,8 @@ class ServerConfig:
     whisper_model_size: str = "base"
     whisper_language: str = "zh"
     tts_voice: str = "zh-CN-XiaoxiaoNeural"
+    tts_sentence_stream: bool = True        # 按句分段 TTS，降低长段中途卡顿
+    tts_sentence_max_chars: int = 80        # 单句过长时的最大切分长度
     soul_path: str = "SOUL.md"
     memory_path: str = "MEMORY.md"
     auth_token: str = ""                   # 预共享认证 token

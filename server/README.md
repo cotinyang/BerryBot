@@ -86,6 +86,8 @@ vim models.json
 | `PORT` | `8765` | 监听端口 |
 | `WHISPER_MODEL` | `base` | Whisper 模型大小: tiny/base/small/medium/large |
 | `TTS_VOICE` | `zh-CN-XiaoxiaoNeural` | edge-tts 语音角色 |
+| `TTS_SENTENCE_STREAM` | `1` | 按句分段进行 TTS 流式合成，减轻长段中途卡顿 |
+| `TTS_SENTENCE_MAX_CHARS` | `80` | 按句模式下单段最大字符数，超长句会继续切块 |
 | `SOUL_PATH` | `SOUL.md` | Agent 人格定义文件 |
 | `MEMORY_PATH` | `MEMORY.md` | Agent 记忆文件 |
 | `DEBUG_BYPASS_AGENT` | `0` | 调试开关：为 `1` 时跳过 Agent，ASR 文本直接 TTS 回传 |

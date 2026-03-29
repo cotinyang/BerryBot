@@ -93,6 +93,36 @@ def parse_args(argv: list[str] | None = None) -> ClientConfig:
         help="语音能量阈值（默认: 500.0）",
     )
     parser.add_argument(
+        "--enable-gentle-trim",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="是否启用录音首尾温和静音裁剪（默认: 启用）",
+    )
+    parser.add_argument(
+        "--trim-frame-ms",
+        type=int,
+        default=20,
+        help="温和静音裁剪分析帧长毫秒（默认: 20）",
+    )
+    parser.add_argument(
+        "--trim-min-silence-sec",
+        type=float,
+        default=0.35,
+        help="触发首尾裁剪所需最小静音时长秒数（默认: 0.35）",
+    )
+    parser.add_argument(
+        "--trim-padding-sec",
+        type=float,
+        default=0.25,
+        help="首尾裁剪保留缓冲时长秒数（默认: 0.25）",
+    )
+    parser.add_argument(
+        "--trim-energy-ratio",
+        type=float,
+        default=0.6,
+        help="裁剪静音阈值倍率（effective_threshold = energy_threshold * ratio，默认: 0.6）",
+    )
+    parser.add_argument(
         "--use-webrtc-vad",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -128,6 +158,12 @@ def parse_args(argv: list[str] | None = None) -> ClientConfig:
         type=int,
         default=3,
         help="最大重连次数（默认: 3）",
+    )
+    parser.add_argument(
+        "--ws-max-message-size",
+        type=int,
+        default=8 * 1024 * 1024,
+        help="WebSocket 单条消息最大字节数（默认: 8388608）",
     )
     parser.add_argument(
         "--session-timeout",
@@ -166,12 +202,18 @@ def parse_args(argv: list[str] | None = None) -> ClientConfig:
         max_recording_duration=args.max_recording_duration,
         sample_rate=args.sample_rate,
         energy_threshold=args.energy_threshold,
+        enable_gentle_trim=args.enable_gentle_trim,
+        trim_frame_ms=args.trim_frame_ms,
+        trim_min_silence_sec=args.trim_min_silence_sec,
+        trim_padding_sec=args.trim_padding_sec,
+        trim_energy_ratio=args.trim_energy_ratio,
         use_webrtc_vad=args.use_webrtc_vad,
         webrtc_vad_mode=args.webrtc_vad_mode,
         interrupt_grace_period=args.interrupt_grace_period,
         interrupt_min_voice_duration=args.interrupt_min_voice_duration,
         reconnect_interval=args.reconnect_interval,
         max_reconnect_retries=args.max_reconnect_retries,
+        ws_max_message_size=args.ws_max_message_size,
         session_timeout=args.session_timeout,
         session_end_audio_path=args.session_end_audio_path,
         audio_player_command=args.audio_player_command,
@@ -197,6 +239,11 @@ class VoiceAssistantClient:
             max_recording_duration=config.max_recording_duration,
             sample_rate=config.sample_rate,
             energy_threshold=config.energy_threshold,
+            enable_gentle_trim=config.enable_gentle_trim,
+            trim_frame_ms=config.trim_frame_ms,
+            trim_min_silence_sec=config.trim_min_silence_sec,
+            trim_padding_sec=config.trim_padding_sec,
+            trim_energy_ratio=config.trim_energy_ratio,
         )
         self._audio_player = AudioPlayer(
             player_command=config.audio_player_command,
@@ -214,6 +261,7 @@ class VoiceAssistantClient:
             max_retries=config.max_reconnect_retries,
             retry_interval=config.reconnect_interval,
             auth_token=config.auth_token,
+            max_message_size=config.ws_max_message_size,
         )
 
         self._register_callbacks()
