@@ -8,10 +8,15 @@ import asyncio
 import logging
 import shlex
 import tempfile
+import time
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_STREAM_PREFILL_BYTES = 32 * 1024
+_STREAM_BATCH_WRITE_BYTES = 8 * 1024
+_STREAM_PREFILL_MAX_WAIT_SECONDS = 0.25
 
 # 按优先级排列的播放器命令，每个元素为 (命令名, 参数模板)
 # {file} 会被替换为临时文件路径
@@ -56,6 +61,9 @@ class AudioPlayer:
         completed_normally = False
         cmd: list[str] = []
         total_bytes = 0
+        pending = bytearray()
+        first_chunk_at: float | None = None
+        prefill_done = False
         try:
             cmd = self._build_stream_command(
                 self._player_command,
@@ -82,9 +90,41 @@ class AudioPlayer:
             async for chunk in chunks:
                 if not chunk:
                     continue
+
+                now = time.monotonic()
+                if first_chunk_at is None:
+                    first_chunk_at = now
+
                 total_bytes += len(chunk)
+                pending.extend(chunk)
+
+                if not prefill_done:
+                    prefill_reached = len(pending) >= _STREAM_PREFILL_BYTES
+                    prefill_timeout = (
+                        first_chunk_at is not None
+                        and (now - first_chunk_at) >= _STREAM_PREFILL_MAX_WAIT_SECONDS
+                    )
+                    if not prefill_reached and not prefill_timeout:
+                        continue
+                    prefill_done = True
+
+                if len(pending) < _STREAM_BATCH_WRITE_BYTES:
+                    continue
+
                 try:
-                    self._process.stdin.write(chunk)
+                    self._process.stdin.write(pending)
+                    pending.clear()
+                    await self._process.stdin.drain()
+                except (BrokenPipeError, ConnectionResetError):
+                    if not self._playing:
+                        logger.info("流式播放在停止过程中被中断")
+                        return
+                    raise
+
+            if pending:
+                try:
+                    self._process.stdin.write(pending)
+                    pending.clear()
                     await self._process.stdin.drain()
                 except (BrokenPipeError, ConnectionResetError):
                     if not self._playing:

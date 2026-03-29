@@ -326,3 +326,47 @@ class TestErrorHandling:
             await player.play(b"\x00" * 100)
 
         assert player.is_playing is False
+
+
+class TestStreamPlayback:
+    def test_build_stream_command_uses_mpg123_by_default(self) -> None:
+        """流式播放默认优先使用 mpg123 从 stdin 读取。"""
+        def mock_which(name: str) -> str | None:
+            return "/usr/bin/mpg123" if name == "mpg123" else None
+
+        with patch("shutil.which", side_effect=mock_which):
+            cmd = AudioPlayer._build_stream_command(audio_format="mp3")
+
+        assert cmd == ["mpg123", "-q", "-"]
+
+    @pytest.mark.asyncio
+    async def test_play_stream_prefill_and_batch_write(self, player: AudioPlayer) -> None:
+        """流式播放应在预缓冲后按批量写入，减少小包抖动。"""
+        chunk = b"a" * 1024
+
+        async def fake_chunks():
+            for _ in range(40):
+                yield chunk
+
+        mock_stdin = MagicMock()
+        mock_stdin.write = MagicMock()
+        mock_stdin.drain = AsyncMock()
+        mock_stdin.close = MagicMock()
+
+        mock_stderr = AsyncMock()
+        mock_stderr.read = AsyncMock(return_value=b"")
+
+        mock_proc = AsyncMock()
+        mock_proc.stdin = mock_stdin
+        mock_proc.stderr = mock_stderr
+        mock_proc.wait = AsyncMock(return_value=0)
+        mock_proc.returncode = 0
+
+        with (
+            patch("client.audio_player.AudioPlayer._build_stream_command", return_value=["mpg123", "-q", "-"]),
+            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+        ):
+            await player.play_stream(fake_chunks(), audio_format="mp3")
+
+        # 40 个 1KB chunk 总计 40KB，按 8KB 批次应明显少于逐 chunk 写入。
+        assert 1 <= mock_stdin.write.call_count <= 6
