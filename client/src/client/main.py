@@ -93,6 +93,18 @@ def parse_args(argv: list[str] | None = None) -> ClientConfig:
         help="语音能量阈值（默认: 500.0）",
     )
     parser.add_argument(
+        "--interrupt-grace-period",
+        type=float,
+        default=0.8,
+        help="播放开始后忽略打断检测的保护时长秒数（默认: 0.8）",
+    )
+    parser.add_argument(
+        "--interrupt-min-voice-duration",
+        type=float,
+        default=0.3,
+        help="触发打断所需连续语音时长秒数（默认: 0.3）",
+    )
+    parser.add_argument(
         "--reconnect-interval",
         type=float,
         default=5.0,
@@ -141,6 +153,8 @@ def parse_args(argv: list[str] | None = None) -> ClientConfig:
         max_recording_duration=args.max_recording_duration,
         sample_rate=args.sample_rate,
         energy_threshold=args.energy_threshold,
+        interrupt_grace_period=args.interrupt_grace_period,
+        interrupt_min_voice_duration=args.interrupt_min_voice_duration,
         reconnect_interval=args.reconnect_interval,
         max_reconnect_retries=args.max_reconnect_retries,
         session_timeout=args.session_timeout,
@@ -175,6 +189,8 @@ class VoiceAssistantClient:
         )
         self._interrupt_handler = InterruptHandler(
             energy_threshold=config.energy_threshold,
+            grace_period=config.interrupt_grace_period,
+            min_voice_duration=config.interrupt_min_voice_duration,
         )
         self._ws_client = WebSocketClient(
             server_url=config.server_url,
@@ -298,6 +314,12 @@ class VoiceAssistantClient:
 
             if voice_detected:
                 logger.info("连续对话: 检测到用户语音，继续录音")
+                if self._state_machine.state != ClientState.LISTENING:
+                    logger.warning(
+                        "连续对话: 状态已变化为 %s，跳过本次录音",
+                        self._state_machine.state.value,
+                    )
+                    return
                 self._state_machine.transition(ClientState.RECORDING)
                 await self._do_record_send_play()
             else:

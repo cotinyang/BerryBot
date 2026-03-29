@@ -40,6 +40,8 @@ class TestParseArgs:
         assert config.max_recording_duration == 10.0
         assert config.sample_rate == 16000
         assert config.energy_threshold == 500.0
+        assert config.interrupt_grace_period == 0.8
+        assert config.interrupt_min_voice_duration == 0.3
         assert config.reconnect_interval == 5.0
         assert config.max_reconnect_retries == 3
 
@@ -52,12 +54,16 @@ class TestParseArgs:
             "--silence-threshold", "2.0",
             "--max-recording-duration", "8.0",
             "--energy-threshold", "800.0",
+            "--interrupt-grace-period", "1.0",
+            "--interrupt-min-voice-duration", "0.5",
             "--reconnect-interval", "10.0",
             "--max-reconnect-retries", "5",
         ])
         assert config.silence_threshold == 2.0
         assert config.max_recording_duration == 8.0
         assert config.energy_threshold == 800.0
+        assert config.interrupt_grace_period == 1.0
+        assert config.interrupt_min_voice_duration == 0.5
         assert config.reconnect_interval == 10.0
         assert config.max_reconnect_retries == 5
 

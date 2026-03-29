@@ -193,21 +193,22 @@ class AudioPlayer:
                 cmd[0],
                 self._output_device or "default",
             )
-            self._process = await asyncio.create_subprocess_exec(
+            proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
             )
-            wait_result = await self._process.wait()
+            self._process = proc
+            wait_result = await proc.wait()
             if isinstance(wait_result, int):
                 return_code = wait_result
-            elif isinstance(self._process.returncode, int):
-                return_code = self._process.returncode
+            elif isinstance(proc.returncode, int):
+                return_code = proc.returncode
             else:
                 return_code = 0
             stderr_text = ""
-            if self._process.stderr is not None:
-                stderr_bytes = await self._process.stderr.read()
+            if proc.stderr is not None:
+                stderr_bytes = await proc.stderr.read()
                 if isinstance(stderr_bytes, (bytes, bytearray)):
                     stderr_text = bytes(stderr_bytes).decode(errors="ignore").strip()
                 elif stderr_bytes:
