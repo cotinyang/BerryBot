@@ -11,7 +11,12 @@ from client.audio_recorder import AudioRecorder
 
 @pytest.fixture
 def recorder() -> AudioRecorder:
-    return AudioRecorder(silence_threshold=1.5, sample_rate=16000, energy_threshold=500.0)
+    return AudioRecorder(
+        silence_threshold=1.5,
+        max_recording_duration=10.0,
+        sample_rate=16000,
+        energy_threshold=500.0,
+    )
 
 
 # ── encode_wav 测试 ──────────────────────────────────────────────
@@ -60,6 +65,11 @@ class TestEncodeWav:
 
 
 class TestDetectSilence:
+    def test_compute_rms_returns_expected_value(self, recorder: AudioRecorder) -> None:
+        """_compute_rms 应返回正确的均方根值。"""
+        chunk = struct.pack("<4h", 300, 300, 300, 300)
+        assert recorder._compute_rms(chunk) == pytest.approx(300.0)
+
     def test_silence_detected_for_zeros(self, recorder: AudioRecorder) -> None:
         """全零采样应判定为静音。"""
         chunk = struct.pack("<100h", *([0] * 100))
@@ -137,6 +147,15 @@ class TestStopRecordingCondition:
             voice_detected=False,
             continuous_silence_sec=1.5,
             total_duration_sec=1.5,
+        )
+        assert should_stop is True
+
+    def test_stops_at_max_recording_duration_even_with_noise(self) -> None:
+        recorder = AudioRecorder(silence_threshold=1.5, max_recording_duration=10.0)
+        should_stop = recorder._should_stop_recording(
+            voice_detected=True,
+            continuous_silence_sec=0.0,
+            total_duration_sec=10.0,
         )
         assert should_stop is True
 

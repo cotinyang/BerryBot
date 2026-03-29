@@ -21,10 +21,12 @@ class AudioRecorder:
     def __init__(
         self,
         silence_threshold: float = 1.5,
+        max_recording_duration: float = 10.0,
         sample_rate: int = 16000,
         energy_threshold: float = 500.0,
     ) -> None:
         self.silence_threshold = silence_threshold
+        self.max_recording_duration = max_recording_duration
         self.sample_rate = sample_rate
         self.energy_threshold = energy_threshold
         self._channels = 1
@@ -34,6 +36,7 @@ class AudioRecorder:
         self._frames: list[bytes] = []
         self._pa: object | None = None
         self._stream: object | None = None
+        self._level_log_interval_sec = 2.0
 
     def _should_stop_recording(
         self,
@@ -49,6 +52,9 @@ class AudioRecorder:
         - 若一直未检测到语音，超过兜底时长后停止，避免无限录音。
         """
         if voice_detected and continuous_silence_sec >= self.silence_threshold:
+            return True
+
+        if total_duration_sec >= self.max_recording_duration:
             return True
 
         # 无语音兜底：至少等待 1 秒，且不短于 silence_threshold
@@ -85,17 +91,35 @@ class AudioRecorder:
         total_duration_sec = 0.0
         continuous_silence_sec = 0.0
         voice_detected = False
+        next_level_log_sec = self._level_log_interval_sec
 
         while self._recording:
             data = self._stream.read(self._chunk_size, exception_on_overflow=False)  # type: ignore[union-attr]
             self._frames.append(data)
 
             total_duration_sec += chunk_duration_sec
-            if self.detect_silence(data):
+            rms = self._compute_rms(data)
+            peak = self._compute_peak(data)
+            is_silent = rms < self.energy_threshold
+            if is_silent:
                 continuous_silence_sec += chunk_duration_sec
             else:
                 voice_detected = True
                 continuous_silence_sec = 0.0
+
+            if total_duration_sec >= next_level_log_sec:
+                logger.info(
+                    "录音电平: rms=%.1f, peak=%d, threshold=%.1f, over_threshold=%s, is_silent=%s, duration=%.1fs, silence=%.1fs, voice_detected=%s",
+                    rms,
+                    peak,
+                    self.energy_threshold,
+                    not is_silent,
+                    is_silent,
+                    total_duration_sec,
+                    continuous_silence_sec,
+                    voice_detected,
+                )
+                next_level_log_sec += self._level_log_interval_sec
 
             if self._should_stop_recording(
                 voice_detected=voice_detected,
@@ -153,19 +177,33 @@ class AudioRecorder:
         Returns:
             True 表示静音，False 表示有声音。
         """
+        return self._compute_rms(audio_chunk) < self.energy_threshold
+
+    def _compute_rms(self, audio_chunk: bytes) -> float:
+        """计算音频块的 RMS 能量。"""
         if len(audio_chunk) < self._sample_width:
-            return True
+            return 0.0
 
         # 确保数据长度是 sample_width 的整数倍
         num_samples = len(audio_chunk) // self._sample_width
         if num_samples == 0:
-            return True
+            return 0.0
 
         # 解析 16-bit little-endian 有符号整数
         samples = struct.unpack(f"<{num_samples}h", audio_chunk[: num_samples * self._sample_width])
 
         # 计算 RMS 能量
         sum_squares = sum(s * s for s in samples)
-        rms = (sum_squares / num_samples) ** 0.5
+        return (sum_squares / num_samples) ** 0.5
 
-        return rms < self.energy_threshold
+    def _compute_peak(self, audio_chunk: bytes) -> int:
+        """计算音频块峰值振幅。"""
+        if len(audio_chunk) < self._sample_width:
+            return 0
+
+        num_samples = len(audio_chunk) // self._sample_width
+        if num_samples == 0:
+            return 0
+
+        samples = struct.unpack(f"<{num_samples}h", audio_chunk[: num_samples * self._sample_width])
+        return max(abs(sample) for sample in samples)

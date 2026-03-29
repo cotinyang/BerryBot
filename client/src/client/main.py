@@ -75,6 +75,12 @@ def parse_args(argv: list[str] | None = None) -> ClientConfig:
         help="静音检测阈值秒数（默认: 1.5）",
     )
     parser.add_argument(
+        "--max-recording-duration",
+        type=float,
+        default=10.0,
+        help="单次录音最长时长秒数（默认: 10.0）",
+    )
+    parser.add_argument(
         "--sample-rate",
         type=int,
         default=16000,
@@ -132,6 +138,7 @@ def parse_args(argv: list[str] | None = None) -> ClientConfig:
         wake_prompt_audio_path=args.wake_prompt_audio_path,
         wake_prompt_delay=args.wake_prompt_delay,
         silence_threshold=args.silence_threshold,
+        max_recording_duration=args.max_recording_duration,
         sample_rate=args.sample_rate,
         energy_threshold=args.energy_threshold,
         reconnect_interval=args.reconnect_interval,
@@ -158,6 +165,7 @@ class VoiceAssistantClient:
         self._wake_word_detector = create_wake_word_detector(config)
         self._audio_recorder = AudioRecorder(
             silence_threshold=config.silence_threshold,
+            max_recording_duration=config.max_recording_duration,
             sample_rate=config.sample_rate,
             energy_threshold=config.energy_threshold,
         )

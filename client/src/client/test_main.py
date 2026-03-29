@@ -37,6 +37,7 @@ class TestParseArgs:
         assert config.wake_prompt_audio_path == "assets/wo_zai.mp3"
         assert config.wake_prompt_delay == 0.3
         assert config.silence_threshold == 1.5
+        assert config.max_recording_duration == 10.0
         assert config.sample_rate == 16000
         assert config.energy_threshold == 500.0
         assert config.reconnect_interval == 5.0
@@ -49,11 +50,13 @@ class TestParseArgs:
             "--wake-word-access-key", "key123",
             "--wake-word-keyword-path", "/kw.ppn",
             "--silence-threshold", "2.0",
+            "--max-recording-duration", "8.0",
             "--energy-threshold", "800.0",
             "--reconnect-interval", "10.0",
             "--max-reconnect-retries", "5",
         ])
         assert config.silence_threshold == 2.0
+        assert config.max_recording_duration == 8.0
         assert config.energy_threshold == 800.0
         assert config.reconnect_interval == 10.0
         assert config.max_reconnect_retries == 5
