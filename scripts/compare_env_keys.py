@@ -14,8 +14,14 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import TypedDict
 
 ENV_KEY_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
+
+
+class SampleEntry(TypedDict):
+    line: str
+    commented: bool
 
 
 def parse_env_keys(path: Path, include_commented: bool = False) -> set[str]:
@@ -43,19 +49,22 @@ def parse_env_keys(path: Path, include_commented: bool = False) -> set[str]:
     return keys
 
 
-def parse_sample_entries(path: Path) -> dict[str, str]:
-    """Parse sample file and map key -> assignment line.
+def parse_sample_entries(path: Path) -> dict[str, SampleEntry]:
+    """Parse sample file and map key -> assignment metadata.
 
-    Commented assignment lines like '# KEY=value' are normalized to 'KEY=value'.
+    Commented assignment lines like '# KEY=value' are normalized to 'KEY=value',
+    and their comment status is preserved.
     """
-    entries: dict[str, str] = {}
+    entries: dict[str, SampleEntry] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         stripped = raw_line.strip()
         if not stripped:
             continue
 
         candidate = raw_line
+        is_commented = False
         if stripped.startswith("#"):
+            is_commented = True
             candidate = stripped[1:].lstrip()
 
         match = ENV_KEY_RE.match(candidate)
@@ -64,13 +73,19 @@ def parse_sample_entries(path: Path) -> dict[str, str]:
 
         key = match.group(1)
         # Keep the first declaration from sample to preserve author intent.
-        entries.setdefault(key, candidate.strip())
+        entries.setdefault(
+            key,
+            {
+                "line": candidate.strip(),
+                "commented": is_commented,
+            },
+        )
     return entries
 
 
 def append_missing_entries(
     env_path: Path,
-    sample_entries: dict[str, str],
+    sample_entries: dict[str, SampleEntry],
     missing_keys: list[str],
 ) -> int:
     """Append missing keys into env file from sample entries.
@@ -93,11 +108,30 @@ def append_missing_entries(
 
 
 def build_missing_lines(
-    sample_entries: dict[str, str],
+    sample_entries: dict[str, SampleEntry],
     missing_keys: list[str],
 ) -> list[str]:
-    """Build normalized KEY=value lines for missing keys."""
-    return [sample_entries[key] for key in missing_keys if key in sample_entries]
+    """Build normalized KEY=value lines for missing keys.
+
+    Rules:
+    - Skip entries that are commented in sample.
+    - Skip entries with empty value (e.g. KEY=).
+    """
+    lines: list[str] = []
+    for key in missing_keys:
+        entry = sample_entries.get(key)
+        if entry is None:
+            continue
+        if entry["commented"]:
+            continue
+
+        line = entry["line"]
+        _lhs, _eq, rhs = line.partition("=")
+        if rhs.strip() == "":
+            continue
+
+        lines.append(line)
+    return lines
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -180,8 +214,11 @@ def main(argv: list[str] | None = None) -> int:
         lines_to_append = build_missing_lines(sample_entries, missing_in_env)
         if args.dry_run:
             print("Dry run: would append the following lines to env:")
-            for line in lines_to_append:
-                print(f"  {line}")
+            if lines_to_append:
+                for line in lines_to_append:
+                    print(f"  {line}")
+            else:
+                print("  (none)")
             print(f"Dry run summary: {len(lines_to_append)} entries would be appended")
             return 1
 
