@@ -2,54 +2,54 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/Platform-Raspberry%20Pi%20%2B%20VPS-green.svg)](https://www.raspberrypi.com/)
-[![Protocol](https://img.shields.io/badge/Realtime-WebSocket-orange.svg)](#architecture)
+[![Protocol](https://img.shields.io/badge/Realtime-WebSocket-orange.svg)](#架构)
 
-BerryBot is a practical voice assistant system built for Raspberry Pi clients and VPS-hosted AI services.
+BerryBot 是一个面向树莓派终端 + 云端 VPS 的实战语音助手项目。
 
-It supports a complete near real-time conversation loop:
+它覆盖了完整的近实时语音交互闭环：
 
-- Wake word detection on device
-- Speech recording and upload
-- ASR + Agent response on server
-- Streaming TTS back to client
-- Interrupt while playback is running
+- 设备侧唤醒词检测
+- 语音录制与上传
+- 服务端 ASR 与 Agent 处理
+- TTS 语音流式返回
+- 播放中可语音打断
 
-An English introduction is also available in [README.en.md](README.en.md).
+English documentation: [README.en.md](README.en.md)
 
-## Features
+## 功能亮点
 
-- End-to-end Chinese voice assistant workflow
-- Low-latency audio response with streaming playback
-- Configurable audio backend for Raspberry Pi and Bluetooth speakers
-- Session management and interrupt handling
-- Token + TLS ready deployment pattern
-- Env key comparison helper after fresh clone
+- 中文语音助手端到端链路
+- WebSocket 实时双向通信
+- 流式 TTS 回放，降低首响延迟
+- 会话状态管理与打断控制
+- 适配树莓派与蓝牙音箱的可配置播放后端
+- 克隆后可快速检查 `.env` 字段差异
 
-## Architecture
+## 架构
 
-1. Client listens for wake word.
-2. Client records speech and sends audio to server.
-3. Server runs ASR, Agent processing, and TTS synthesis.
-4. Server streams audio chunks over WebSocket.
-5. Client plays chunks while receiving.
-6. User interruption can stop playback and continue dialogue.
+1. 客户端持续监听唤醒词。
+2. 唤醒后录音并发送音频到服务端。
+3. 服务端执行 ASR、Agent 推理、TTS 合成。
+4. 服务端通过 WebSocket 流式推送音频 chunk。
+5. 客户端边接收边播放。
+6. 用户可在播放过程中打断并继续对话。
 
-## Repository Layout
+## 仓库结构
 
-- [client](client): On-device runtime (wake word, recorder, player, websocket client)
-- [server](server): ASR, Agent, TTS, websocket server
-- [scripts](scripts): Utilities (for example env key diff checker)
-- [openclaw](openclaw): Additional workspace content
+- [client](client): 设备侧运行时（唤醒词、录音、播放、WebSocket 客户端）
+- [server](server): 服务端组件（ASR、Agent、TTS、WebSocket 服务）
+- [scripts](scripts): 工具脚本（例如 env 字段比对）
+- [openclaw](openclaw): 其他工作区内容
 
-## Quick Start
+## 快速开始
 
-### Prerequisites
+### 前置依赖
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
-- Linux audio backend on Raspberry Pi
+- 树莓派可用的 Linux 音频后端
 
-### 1. Install dependencies
+### 1. 安装依赖
 
 ```bash
 cd client
@@ -59,7 +59,7 @@ cd ../server
 uv sync
 ```
 
-### 2. Prepare env files
+### 2. 准备环境变量文件
 
 ```bash
 cd ../client
@@ -69,7 +69,7 @@ cd ../server
 cp .env.example .env
 ```
 
-### 3. Validate env keys (recommended)
+### 3. 校验 env 字段（推荐）
 
 ```bash
 # client
@@ -81,7 +81,7 @@ cd ../server
 python3 ../scripts/compare_env_keys.py
 ```
 
-### 4. Start services
+### 4. 启动服务
 
 ```bash
 # server
@@ -93,21 +93,21 @@ cd ../client
 ./start.sh start
 ```
 
-## Raspberry Pi Audio Notes
+## 树莓派音频说明
 
-If you use a Bluetooth speaker (for example Echo Dot), verify local playback first:
+如果你使用蓝牙音箱（例如 Echo Dot），建议先在设备上验证本地播放：
 
 ```bash
 mpg123 assets/wo_zai.mp3
 aplay assets/end.wav
 ```
 
-Audio behavior can be adjusted in [client/.env.example](client/.env.example):
+音频播放行为可在 [client/.env.example](client/.env.example) 中配置：
 
 - `AUDIO_PLAYER_COMMAND`
 - `AUDIO_OUTPUT_DEVICE`
 
-## Tests
+## 测试
 
 ```bash
 # server
@@ -119,12 +119,12 @@ cd ../client
 uv run pytest
 ```
 
-## Security and Deployment
+## 安全与部署建议
 
-- Keep secrets in `.env` only.
-- Use TLS for production websocket endpoints.
-- Restrict server access with auth token and network rules.
+- 敏感信息仅保存在 `.env`，不要提交到仓库。
+- 生产环境请启用 TLS。
+- 使用认证 token 与网络策略限制服务访问范围。
 
-## License
+## 许可证
 
-Add your preferred license file and update this section before public release.
+本项目使用 [Apache License 2.0](LICENSE)。

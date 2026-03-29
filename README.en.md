@@ -6,6 +6,8 @@
 
 BerryBot is a practical voice assistant system built for Raspberry Pi clients and VPS-hosted AI services.
 
+Chinese documentation: [README.md](README.md)
+
 It provides a complete near real-time conversation loop:
 
 - Wake word detection on device
@@ -125,4 +127,4 @@ uv run pytest
 
 ## License
 
-Add your preferred license file and update this section before public release.
+This project is licensed under [Apache License 2.0](LICENSE).
