@@ -5,11 +5,12 @@
   cd server && uv run python ../scripts/generate_audio.py
 
 生成文件：
-  - client/assets/wo_zai.mp3  唤醒提示音（"我在"，前置 0.5s 静音）
+    - client/assets/wo_zai.mp3  唤醒提示音（"我在"，可配置前置静音）
   - client/assets/end.wav     会话结束音（高低两声，0.5s）
 """
 
 import asyncio
+import argparse
 import math
 import os
 import struct
@@ -21,8 +22,8 @@ ASSETS_DIR = Path(__file__).resolve().parent.parent / "client" / "assets"
 TTS_VOICE = "zh-CN-XiaoxiaoNeural"
 
 
-async def generate_wo_zai() -> None:
-    """生成唤醒提示音：0.5s 静音 + "我在"。"""
+async def generate_wo_zai(leading_silence_ms: int = 0) -> None:
+    """生成唤醒提示音：可选前置静音 + "我在"。"""
     import edge_tts
     from pydub import AudioSegment
 
@@ -38,10 +39,13 @@ async def generate_wo_zai() -> None:
     tmp.write(audio)
     tmp.close()
 
-    # 3. 前置 0.5s 静音
+    # 3. 可选前置静音
     speech = AudioSegment.from_mp3(tmp.name)
-    silence = AudioSegment.silent(duration=500)
-    result = silence + speech
+    if leading_silence_ms > 0:
+        silence = AudioSegment.silent(duration=leading_silence_ms)
+        result = silence + speech
+    else:
+        result = speech
 
     # 4. 导出
     out = ASSETS_DIR / "wo_zai.mp3"
@@ -81,10 +85,19 @@ def generate_end_sound() -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="生成客户端提示音资源")
+    parser.add_argument(
+        "--wo-zai-leading-silence-ms",
+        type=int,
+        default=0,
+        help="wo_zai.mp3 前置静音毫秒数（默认: 0）",
+    )
+    args = parser.parse_args()
+
     ASSETS_DIR.mkdir(parents=True, exist_ok=True)
 
     print("生成唤醒提示音 (wo_zai.mp3)...")
-    asyncio.run(generate_wo_zai())
+    asyncio.run(generate_wo_zai(args.wo_zai_leading_silence_ms))
 
     print("生成会话结束音 (end.wav)...")
     generate_end_sound()
