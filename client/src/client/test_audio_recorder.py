@@ -107,3 +107,44 @@ class TestDetectSilence:
         # RMS = 50, threshold = 100 → silent
         chunk = struct.pack("<50h", *([50] * 50))
         assert recorder.detect_silence(chunk) is True
+
+
+# ── 录音停止条件测试 ─────────────────────────────────────────────
+
+
+class TestStopRecordingCondition:
+    def test_stops_after_continuous_silence_when_voice_detected(self) -> None:
+        recorder = AudioRecorder(silence_threshold=1.5)
+        should_stop = recorder._should_stop_recording(
+            voice_detected=True,
+            continuous_silence_sec=1.5,
+            total_duration_sec=2.0,
+        )
+        assert should_stop is True
+
+    def test_does_not_stop_on_short_silence_after_voice(self) -> None:
+        recorder = AudioRecorder(silence_threshold=1.5)
+        should_stop = recorder._should_stop_recording(
+            voice_detected=True,
+            continuous_silence_sec=0.2,
+            total_duration_sec=2.0,
+        )
+        assert should_stop is False
+
+    def test_stops_after_no_voice_timeout(self) -> None:
+        recorder = AudioRecorder(silence_threshold=1.5)
+        should_stop = recorder._should_stop_recording(
+            voice_detected=False,
+            continuous_silence_sec=1.5,
+            total_duration_sec=1.5,
+        )
+        assert should_stop is True
+
+    def test_no_voice_timeout_has_minimum_one_second(self) -> None:
+        recorder = AudioRecorder(silence_threshold=0.3)
+        should_stop = recorder._should_stop_recording(
+            voice_detected=False,
+            continuous_silence_sec=0.3,
+            total_duration_sec=0.9,
+        )
+        assert should_stop is False

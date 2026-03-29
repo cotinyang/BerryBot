@@ -33,6 +33,29 @@ class AudioRecorder:
         self._pa: object | None = None
         self._stream: object | None = None
 
+    def _should_stop_recording(
+        self,
+        *,
+        voice_detected: bool,
+        continuous_silence_sec: float,
+        total_duration_sec: float,
+    ) -> bool:
+        """判断是否应停止录音。
+
+        规则：
+        - 已检测到语音后，连续静音达到阈值则停止。
+        - 若一直未检测到语音，超过兜底时长后停止，避免无限录音。
+        """
+        if voice_detected and continuous_silence_sec >= self.silence_threshold:
+            return True
+
+        # 无语音兜底：至少等待 1 秒，且不短于 silence_threshold
+        no_voice_timeout = max(self.silence_threshold, 1.0)
+        if (not voice_detected) and total_duration_sec >= no_voice_timeout:
+            return True
+
+        return False
+
     async def start_recording(self) -> None:
         """开始录音。延迟导入 pyaudio，打开音频流并持续采集。"""
         try:
@@ -55,10 +78,27 @@ class AudioRecorder:
             frames_per_buffer=self._chunk_size,
         )
 
+        chunk_duration_sec = self._chunk_size / self.sample_rate
+        total_duration_sec = 0.0
+        continuous_silence_sec = 0.0
+        voice_detected = False
+
         while self._recording:
             data = self._stream.read(self._chunk_size, exception_on_overflow=False)  # type: ignore[union-attr]
             self._frames.append(data)
+
+            total_duration_sec += chunk_duration_sec
             if self.detect_silence(data):
+                continuous_silence_sec += chunk_duration_sec
+            else:
+                voice_detected = True
+                continuous_silence_sec = 0.0
+
+            if self._should_stop_recording(
+                voice_detected=voice_detected,
+                continuous_silence_sec=continuous_silence_sec,
+                total_duration_sec=total_duration_sec,
+            ):
                 break
             await asyncio.sleep(0)
 
