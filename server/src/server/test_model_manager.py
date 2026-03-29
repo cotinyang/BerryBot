@@ -201,5 +201,8 @@ class TestCreateGeminiModel:
         assert captured["model_id"] == "gemini-2.5-flash"
         assert captured["client_args"] == {
             "api_key": "k",
-            "http_options": {"client_args": {"proxy": "http://127.0.0.1:40000"}},
+            "http_options": {
+                "client_args": {"proxy": "http://127.0.0.1:40000"},
+                "async_client_args": {"proxy": "http://127.0.0.1:40000"},
+            },
         }

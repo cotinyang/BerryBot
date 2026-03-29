@@ -3,7 +3,7 @@
   "providers": {
     "gemini": {
       "api_key": "your-gemini-api-key",
-      "proxy": "http://127.0.0.1:7890",
+      "proxy": "socks5://127.0.0.1:40000",
       "models": [
         {
           "name": "Gemini Flash",

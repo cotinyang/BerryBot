@@ -15,8 +15,42 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_proxy_url(raw_proxy: str) -> str:
+    """规范化并校验代理 URL。"""
+    proxy = raw_proxy.strip()
+    if not proxy:
+        return ""
+
+    parsed = urlparse(proxy)
+    if not parsed.scheme:
+        logger.warning("代理未包含 scheme，按 http:// 处理: %s", proxy)
+        proxy = f"http://{proxy}"
+        parsed = urlparse(proxy)
+
+    if (
+        parsed.scheme in {"http", "https"}
+        and parsed.hostname in {"127.0.0.1", "localhost"}
+        and parsed.port == 40000
+    ):
+        logger.warning(
+            "检测到本地 40000 代理且 scheme=%s。若你使用的是 WARP CLI SOCKS5，请改为 socks5://127.0.0.1:40000",
+            parsed.scheme,
+        )
+
+    if parsed.scheme.startswith("socks"):
+        try:
+            import socksio  # type: ignore[import-not-found,unused-ignore]
+        except ImportError as exc:
+            raise RuntimeError(
+                "检测到 SOCKS 代理，但缺少依赖 socksio。请在 server 目录执行: uv add socksio"
+            ) from exc
+
+    return proxy
 
 
 @dataclass
@@ -208,10 +242,14 @@ class ModelManager:
         if config.api_key:
             client_args["api_key"] = config.api_key
         if config.proxy:
+            proxy = _normalize_proxy_url(config.proxy)
             # google-genai 的 HttpOptions 不接受顶层 proxy，
-            # 需要通过 client_args 透传给底层 httpx.Client。
-            client_args["http_options"] = {"client_args": {"proxy": config.proxy}}
-            logger.info("Gemini 模型 %s 使用代理: %s", config.name, config.proxy)
+            # 需要通过 client_args/async_client_args 透传给底层 httpx 客户端。
+            client_args["http_options"] = {
+                "client_args": {"proxy": proxy},
+                "async_client_args": {"proxy": proxy},
+            }
+            logger.info("Gemini 模型 %s 使用代理: %s", config.name, proxy)
 
         return GeminiModel(
             model_id=config.model_id,
@@ -234,8 +272,9 @@ class ModelManager:
             client_args["base_url"] = config.base_url
         if config.proxy:
             import httpx
-            client_args["http_client"] = httpx.Client(proxy=config.proxy)
-            logger.info("OpenAI 模型 %s 使用代理: %s", config.name, config.proxy)
+            proxy = _normalize_proxy_url(config.proxy)
+            client_args["http_client"] = httpx.Client(proxy=proxy)
+            logger.info("OpenAI 模型 %s 使用代理: %s", config.name, proxy)
 
         return OpenAIModel(
             model_id=config.model_id,
