@@ -88,6 +88,17 @@ vim models.json
 | `TTS_VOICE` | `zh-CN-XiaoxiaoNeural` | edge-tts 语音角色 |
 | `SOUL_PATH` | `SOUL.md` | Agent 人格定义文件 |
 | `MEMORY_PATH` | `MEMORY.md` | Agent 记忆文件 |
+| `DEBUG_BYPASS_AGENT` | `0` | 调试开关：为 `1` 时跳过 Agent，ASR 文本直接 TTS 回传 |
+
+### Debug 链路联调模式
+
+当你只想验证语音链路是否通畅（ASR -> TTS -> 客户端）时，可在 `.env` 里开启：
+
+```bash
+DEBUG_BYPASS_AGENT=1
+```
+
+然后重启服务。此模式下服务端不会调用 LLM/Agent，而是把识别到的文本直接做语音合成再返回。
 
 ## 使用
 

@@ -17,3 +17,4 @@ class ServerConfig:
     auth_token: str = ""                   # 预共享认证 token
     tls_cert_path: str = ""               # TLS 证书文件路径 (fullchain.pem)
     tls_key_path: str = ""                # TLS 私钥文件路径 (privkey.pem)
+    debug_bypass_agent: bool = False       # 调试开关: 跳过 Agent，识别文本直接 TTS

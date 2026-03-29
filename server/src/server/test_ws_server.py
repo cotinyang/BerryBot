@@ -12,7 +12,7 @@ from server.ws_server import WebSocketServer
 
 
 def _make_server(
-    speech_recognizer=None, ai_agent=None, speech_synthesizer=None
+    speech_recognizer=None, ai_agent=None, speech_synthesizer=None, debug_bypass_agent=False
 ) -> WebSocketServer:
     """创建带有可选依赖的 WebSocketServer 实例。"""
     return WebSocketServer(
@@ -21,6 +21,7 @@ def _make_server(
         speech_recognizer=speech_recognizer,
         ai_agent=ai_agent,
         speech_synthesizer=speech_synthesizer,
+        debug_bypass_agent=debug_bypass_agent,
     )
 
 
@@ -279,3 +280,52 @@ async def test_interrupt_cancels_processing(pipeline_server):
 
         # The processing task should have been cancelled
         # No audio_response or synthesizing status should follow
+
+
+@pytest.mark.asyncio
+async def test_debug_bypass_agent_echoes_asr_text() -> None:
+    """测试调试模式下跳过 Agent，识别文本直接进入 TTS。"""
+    recognizer = MagicMock()
+    recognizer.recognize = MagicMock(return_value="测试回声")
+
+    agent = MagicMock()
+    agent.process = AsyncMock(return_value="不应被调用")
+
+    synthesizer = MagicMock()
+    synthesizer.synthesize = AsyncMock(return_value=b"\xff\xfb\x90\x00" * 50)
+
+    ws_server = _make_server(
+        speech_recognizer=recognizer,
+        ai_agent=agent,
+        speech_synthesizer=synthesizer,
+        debug_bypass_agent=True,
+    )
+    ws_server._server = await websockets.serve(ws_server.handle_client, "127.0.0.1", 0)
+    ws_server._port = ws_server._server.sockets[0].getsockname()[1]
+
+    try:
+        url = f"ws://127.0.0.1:{ws_server._port}"
+        async with websockets.connect(url) as ws:
+            await ws.send(json.dumps({"type": "audio", "format": "wav", "sample_rate": 16000}))
+            await ws.send(b"\x00\x01\x02\x03" * 100)
+
+            msg1 = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            assert msg1["type"] == "status"
+            assert msg1["status"] == "processing"
+
+            msg2 = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            assert msg2["type"] == "status"
+            assert msg2["status"] == "synthesizing"
+
+            msg3 = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            assert msg3["type"] == "audio_response"
+
+            audio = await asyncio.wait_for(ws.recv(), timeout=2.0)
+            assert isinstance(audio, bytes)
+            assert len(audio) > 0
+
+        recognizer.recognize.assert_called_once()
+        agent.process.assert_not_called()
+        synthesizer.synthesize.assert_called_once_with("测试回声")
+    finally:
+        await ws_server.stop()

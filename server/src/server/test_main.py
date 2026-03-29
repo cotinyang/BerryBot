@@ -32,6 +32,7 @@ class TestParseArgs:
             "--tts-voice", "zh-CN-YunxiNeural",
             "--soul-path", "/tmp/soul.md",
             "--memory-path", "/tmp/mem.md",
+            "--debug-bypass-agent",
         ])
         assert config.host == "127.0.0.1"
         assert config.port == 9000
@@ -39,6 +40,7 @@ class TestParseArgs:
         assert config.tts_voice == "zh-CN-YunxiNeural"
         assert config.soul_path == "/tmp/soul.md"
         assert config.memory_path == "/tmp/mem.md"
+        assert config.debug_bypass_agent is True
 
     def test_partial_args(self) -> None:
         config = parse_args(["--port", "1234"])

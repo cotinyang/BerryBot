@@ -32,6 +32,7 @@ WHISPER_MODEL="${WHISPER_MODEL:-base}"
 TTS_VOICE="${TTS_VOICE:-zh-CN-XiaoxiaoNeural}"
 SOUL_PATH="${SOUL_PATH:-SOUL.md}"
 MEMORY_PATH="${MEMORY_PATH:-MEMORY.md}"
+DEBUG_BYPASS_AGENT="${DEBUG_BYPASS_AGENT:-0}"
 
 # ── 函数 ──────────────────────────────────────────────
 
@@ -55,6 +56,12 @@ do_start() {
     fi
 
     echo "Starting ${APP_NAME}..."
+    local -a extra_args=()
+    if [ "$DEBUG_BYPASS_AGENT" = "1" ] || [ "$DEBUG_BYPASS_AGENT" = "true" ] || [ "$DEBUG_BYPASS_AGENT" = "TRUE" ]; then
+        extra_args+=(--debug-bypass-agent)
+        echo "  Debug: bypass AI Agent enabled (ASR -> TTS)"
+    fi
+
     nohup uv run python -m server.main \
         --host "$HOST" \
         --port "$PORT" \
@@ -65,6 +72,7 @@ do_start() {
         --tts-voice "$TTS_VOICE" \
         --soul-path "$SOUL_PATH" \
         --memory-path "$MEMORY_PATH" \
+        "${extra_args[@]}" \
         >> "$LOG_FILE" 2>&1 &
 
     local pid=$!

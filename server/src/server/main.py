@@ -48,6 +48,11 @@ def parse_args(argv: list[str] | None = None) -> ServerConfig:
     parser.add_argument(
         "--tls-key", default=defaults.tls_key_path, help="TLS 私钥路径 (privkey.pem)"
     )
+    parser.add_argument(
+        "--debug-bypass-agent",
+        action="store_true",
+        help="调试模式: 跳过 AI Agent，识别文本直接进入 TTS",
+    )
     args = parser.parse_args(argv)
     config = ServerConfig(
         host=args.host,
@@ -59,6 +64,7 @@ def parse_args(argv: list[str] | None = None) -> ServerConfig:
         auth_token=args.auth_token,
         tls_cert_path=args.tls_cert,
         tls_key_path=args.tls_key,
+        debug_bypass_agent=args.debug_bypass_agent,
     )
     config._models_config = args.models_config  # type: ignore[attr-defined]
     return config
@@ -92,12 +98,16 @@ async def run_server(config: ServerConfig) -> None:
     session_tools = create_session_tools()
     all_tools = memory_tools + model_tools + session_tools
 
-    agent = AIAgent(
-        soul_path=config.soul_path,
-        memory_path=config.memory_path,
-        tools=all_tools,
-        model_manager=model_manager,
-    )
+    agent = None
+    if not config.debug_bypass_agent:
+        agent = AIAgent(
+            soul_path=config.soul_path,
+            memory_path=config.memory_path,
+            tools=all_tools,
+            model_manager=model_manager,
+        )
+    else:
+        logger.warning("Debug mode enabled: bypassing AI Agent, ASR text will be sent to TTS")
     synthesizer = SpeechSynthesizer(voice=config.tts_voice)
 
     server = WebSocketServer(
@@ -109,6 +119,7 @@ async def run_server(config: ServerConfig) -> None:
         auth_token=config.auth_token,
         tls_cert_path=config.tls_cert_path,
         tls_key_path=config.tls_key_path,
+        debug_bypass_agent=config.debug_bypass_agent,
     )
 
     stop_event = asyncio.Event()
@@ -124,12 +135,13 @@ async def run_server(config: ServerConfig) -> None:
     await server.start()
     protocol = "wss" if config.tls_cert_path else "ws"
     logger.info(
-        "服务已启动 %s://%s:%d  (whisper=%s, voice=%s)",
+        "服务已启动 %s://%s:%d  (whisper=%s, voice=%s, bypass_agent=%s)",
         protocol,
         config.host,
         config.port,
         config.whisper_model_size,
         config.tts_voice,
+        config.debug_bypass_agent,
     )
 
     await stop_event.wait()

@@ -38,6 +38,7 @@ class WebSocketServer:
         auth_token: str = "",
         tls_cert_path: str = "",
         tls_key_path: str = "",
+        debug_bypass_agent: bool = False,
     ) -> None:
         self._host = host
         self._port = port
@@ -48,6 +49,7 @@ class WebSocketServer:
         self._auth_token = auth_token
         self._tls_cert_path = tls_cert_path
         self._tls_key_path = tls_key_path
+        self._debug_bypass_agent = debug_bypass_agent
         # Track per-client processing tasks for cancellation on interrupt
         self._client_tasks: dict[ServerConnection, asyncio.Task[None]] = {}
 
@@ -236,24 +238,28 @@ class WebSocketServer:
                 await self._send_error(websocket, "recognition_failed", f"语音识别错误: {e}")
                 return
 
-            # Step 3: AI Agent processing
-            if self._ai_agent is None:
-                await self._send_error(websocket, "agent_error", "AI Agent 服务未配置")
-                return
-            try:
-                response_text = await self._ai_agent.process(text)
-            except (RuntimeError, Exception) as e:
-                logger.error("AI Agent 处理错误: %s", e)
-                await self._send_error(websocket, "agent_error", f"AI Agent 处理错误: {e}")
-                return
+            # Step 3: AI Agent processing (or bypass in debug mode)
+            if self._debug_bypass_agent:
+                response_text = text
+                logger.info("Debug bypass enabled: skip agent, echo ASR text to TTS")
+            else:
+                if self._ai_agent is None:
+                    await self._send_error(websocket, "agent_error", "AI Agent 服务未配置")
+                    return
+                try:
+                    response_text = await self._ai_agent.process(text)
+                except (RuntimeError, Exception) as e:
+                    logger.error("AI Agent 处理错误: %s", e)
+                    await self._send_error(websocket, "agent_error", f"AI Agent 处理错误: {e}")
+                    return
 
-            # Step 3.5: Check if Agent returned a command instead of text
-            from server.session_tools import is_command, parse_command
-            if is_command(response_text):
-                action = parse_command(response_text)
-                logger.info("Agent 返回指令: %s", action)
-                await self._send_command(websocket, action)
-                return
+                # Step 3.5: Check if Agent returned a command instead of text
+                from server.session_tools import is_command, parse_command
+                if is_command(response_text):
+                    action = parse_command(response_text)
+                    logger.info("Agent 返回指令: %s", action)
+                    await self._send_command(websocket, action)
+                    return
 
             # Step 4: Send "synthesizing" status
             await self._send_status(websocket, "synthesizing")
