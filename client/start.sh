@@ -33,8 +33,13 @@ WAKE_WORD_MODEL_PATH="${WAKE_WORD_MODEL_PATH:-}"
 WAKE_PROMPT_AUDIO="${WAKE_PROMPT_AUDIO:-assets/wo_zai.mp3}"
 WAKE_PROMPT_DELAY="${WAKE_PROMPT_DELAY:-0.3}"
 SILENCE_THRESHOLD="${SILENCE_THRESHOLD:-1.5}"
+MAX_RECORDING_DURATION="${MAX_RECORDING_DURATION:-10.0}"
 SAMPLE_RATE="${SAMPLE_RATE:-16000}"
 ENERGY_THRESHOLD="${ENERGY_THRESHOLD:-500.0}"
+USE_WEBRTC_VAD="${USE_WEBRTC_VAD:-true}"
+WEBRTC_VAD_MODE="${WEBRTC_VAD_MODE:-2}"
+INTERRUPT_GRACE_PERIOD="${INTERRUPT_GRACE_PERIOD:-0.8}"
+INTERRUPT_MIN_VOICE_DURATION="${INTERRUPT_MIN_VOICE_DURATION:-0.3}"
 RECONNECT_INTERVAL="${RECONNECT_INTERVAL:-5.0}"
 MAX_RECONNECT_RETRIES="${MAX_RECONNECT_RETRIES:-3}"
 SESSION_TIMEOUT="${SESSION_TIMEOUT:-5.0}"
@@ -81,6 +86,20 @@ do_start() {
         extra_args+=(--audio-output-device "$AUDIO_OUTPUT_DEVICE")
         echo "  Audio output device: ${AUDIO_OUTPUT_DEVICE}"
     fi
+    local use_webrtc_vad_normalized
+    use_webrtc_vad_normalized="$(printf '%s' "$USE_WEBRTC_VAD" | tr '[:upper:]' '[:lower:]')"
+    case "$use_webrtc_vad_normalized" in
+        1|true|yes|on)
+            extra_args+=(--use-webrtc-vad)
+            ;;
+        0|false|no|off)
+            extra_args+=(--no-use-webrtc-vad)
+            ;;
+        *)
+            echo "Invalid USE_WEBRTC_VAD: ${USE_WEBRTC_VAD}. Expected true/false"
+            exit 1
+            ;;
+    esac
 
     nohup uv run python -m client.main \
         --server-url "$SERVER_URL" \
@@ -93,8 +112,12 @@ do_start() {
         --wake-prompt-audio-path "$WAKE_PROMPT_AUDIO" \
         --wake-prompt-delay "$WAKE_PROMPT_DELAY" \
         --silence-threshold "$SILENCE_THRESHOLD" \
+        --max-recording-duration "$MAX_RECORDING_DURATION" \
         --sample-rate "$SAMPLE_RATE" \
         --energy-threshold "$ENERGY_THRESHOLD" \
+        --webrtc-vad-mode "$WEBRTC_VAD_MODE" \
+        --interrupt-grace-period "$INTERRUPT_GRACE_PERIOD" \
+        --interrupt-min-voice-duration "$INTERRUPT_MIN_VOICE_DURATION" \
         --reconnect-interval "$RECONNECT_INTERVAL" \
         --max-reconnect-retries "$MAX_RECONNECT_RETRIES" \
         --session-timeout "$SESSION_TIMEOUT" \

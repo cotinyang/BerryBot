@@ -111,8 +111,13 @@ vim .env
 | `WAKE_PROMPT_AUDIO` | `assets/wo_zai.mp3` | 唤醒提示音文件（"我在"） |
 | `WAKE_PROMPT_DELAY` | `0.3` | 唤醒后等待后续语音的窗口期（秒） |
 | `SILENCE_THRESHOLD` | `1.5` | 静音检测阈值（秒） |
+| `MAX_RECORDING_DURATION` | `10.0` | 单次录音最长时长（秒） |
 | `SAMPLE_RATE` | `16000` | 音频采样率 |
 | `ENERGY_THRESHOLD` | `500.0` | 语音能量阈值 |
+| `USE_WEBRTC_VAD` | `true` | 是否启用 WebRTC VAD 辅助打断判断 |
+| `WEBRTC_VAD_MODE` | `2` | WebRTC VAD 灵敏度（0 最宽松，3 最严格） |
+| `INTERRUPT_GRACE_PERIOD` | `0.8` | 播放开始后忽略打断检测时长（秒） |
+| `INTERRUPT_MIN_VOICE_DURATION` | `0.3` | 触发打断所需连续语音时长（秒） |
 | `RECONNECT_INTERVAL` | `5.0` | 断线重连间隔（秒） |
 | `MAX_RECONNECT_RETRIES` | `3` | 最大重连次数 |
 | `SESSION_TIMEOUT` | `5.0` | 连续对话超时（秒），超时后结束会话 |

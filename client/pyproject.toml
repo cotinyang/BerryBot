@@ -15,10 +15,12 @@ dependencies = [
 [project.optional-dependencies]
 hardware = [
     "pyaudio",
+    "webrtcvad-wheels",
 ]
 porcupine = [
     "pvporcupine",
     "pyaudio",
+    "webrtcvad-wheels",
 ]
 sherpa = [
     "sherpa-onnx",
@@ -29,6 +31,7 @@ sherpa = [
     "sentencepiece",
     "pypinyin",
     "pyaudio",
+    "webrtcvad-wheels",
 ]
 
 [build-system]

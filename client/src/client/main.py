@@ -93,6 +93,19 @@ def parse_args(argv: list[str] | None = None) -> ClientConfig:
         help="语音能量阈值（默认: 500.0）",
     )
     parser.add_argument(
+        "--use-webrtc-vad",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="是否启用 WebRTC VAD 辅助打断判断（默认: 启用）",
+    )
+    parser.add_argument(
+        "--webrtc-vad-mode",
+        type=int,
+        choices=[0, 1, 2, 3],
+        default=2,
+        help="WebRTC VAD 灵敏度（0 最宽松，3 最严格，默认: 2）",
+    )
+    parser.add_argument(
         "--interrupt-grace-period",
         type=float,
         default=0.8,
@@ -153,6 +166,8 @@ def parse_args(argv: list[str] | None = None) -> ClientConfig:
         max_recording_duration=args.max_recording_duration,
         sample_rate=args.sample_rate,
         energy_threshold=args.energy_threshold,
+        use_webrtc_vad=args.use_webrtc_vad,
+        webrtc_vad_mode=args.webrtc_vad_mode,
         interrupt_grace_period=args.interrupt_grace_period,
         interrupt_min_voice_duration=args.interrupt_min_voice_duration,
         reconnect_interval=args.reconnect_interval,
@@ -189,6 +204,8 @@ class VoiceAssistantClient:
         )
         self._interrupt_handler = InterruptHandler(
             energy_threshold=config.energy_threshold,
+            use_webrtc_vad=config.use_webrtc_vad,
+            webrtc_vad_mode=config.webrtc_vad_mode,
             grace_period=config.interrupt_grace_period,
             min_voice_duration=config.interrupt_min_voice_duration,
         )

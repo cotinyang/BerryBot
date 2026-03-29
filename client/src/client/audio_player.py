@@ -53,6 +53,7 @@ class AudioPlayer:
 
         self._playing = True
         cancelled = False
+        completed_normally = False
         cmd: list[str] = []
         total_bytes = 0
         try:
@@ -82,8 +83,14 @@ class AudioPlayer:
                 if not chunk:
                     continue
                 total_bytes += len(chunk)
-                self._process.stdin.write(chunk)
-                await self._process.stdin.drain()
+                try:
+                    self._process.stdin.write(chunk)
+                    await self._process.stdin.drain()
+                except (BrokenPipeError, ConnectionResetError):
+                    if not self._playing:
+                        logger.info("流式播放在停止过程中被中断")
+                        return
+                    raise
 
             try:
                 self._process.stdin.close()
@@ -126,6 +133,7 @@ class AudioPlayer:
                 )
 
             logger.info("流式播放完成: cmd=%s, size=%d bytes", cmd[0], total_bytes)
+            completed_normally = True
         except asyncio.CancelledError:
             cancelled = True
             await self._kill_process()
@@ -140,7 +148,7 @@ class AudioPlayer:
         finally:
             self._playing = False
             self._process = None
-            if not cancelled and self._on_complete_callback is not None:
+            if completed_normally and not cancelled and self._on_complete_callback is not None:
                 try:
                     self._on_complete_callback()
                 except Exception:
@@ -178,6 +186,7 @@ class AudioPlayer:
 
         self._playing = True
         cancelled = False
+        completed_normally = False
         cmd: list[str] = []
         try:
             cmd = self._build_command(
@@ -234,6 +243,7 @@ class AudioPlayer:
                 )
 
             logger.info("播放完成: cmd=%s", cmd[0])
+            completed_normally = True
         except asyncio.CancelledError:
             cancelled = True
             await self._kill_process()
@@ -249,7 +259,7 @@ class AudioPlayer:
             self._playing = False
             self._process = None
             self._cleanup_temp()
-            if not cancelled and self._on_complete_callback is not None:
+            if completed_normally and not cancelled and self._on_complete_callback is not None:
                 try:
                     self._on_complete_callback()
                 except Exception:

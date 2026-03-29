@@ -22,6 +22,8 @@ class ClientConfig:
     max_recording_duration: float = 10.0
     sample_rate: int = 16000
     energy_threshold: float = 500.0
+    use_webrtc_vad: bool = True
+    webrtc_vad_mode: int = 2
     interrupt_grace_period: float = 0.8
     interrupt_min_voice_duration: float = 0.3
     reconnect_interval: float = 5.0
