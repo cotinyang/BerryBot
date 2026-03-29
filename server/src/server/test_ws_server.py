@@ -48,7 +48,11 @@ async def pipeline_server():
     agent.process = AsyncMock(return_value="你好，有什么可以帮你的？")
 
     synthesizer = MagicMock()
-    synthesizer.synthesize = AsyncMock(return_value=b"\xff\xfb\x90\x00" * 100)
+    async def _fake_stream(_text):
+        yield b"\xff\xfb\x90\x00" * 50
+        yield b"\xff\xfb\x90\x00" * 50
+
+    synthesizer.synthesize_stream = _fake_stream
 
     ws_server = _make_server(
         speech_recognizer=recognizer,
@@ -156,15 +160,27 @@ async def test_full_pipeline_success(pipeline_server):
         msg3 = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
         assert msg3["type"] == "audio_response"
         assert msg3["format"] == "mp3"
+        assert msg3["stream"] is True
 
-        # Expect: binary audio data
-        audio = await asyncio.wait_for(ws.recv(), timeout=2.0)
-        assert isinstance(audio, bytes)
-        assert len(audio) > 0
+        # Expect: chunk metadata + binary (x2)
+        chunk_meta1 = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+        assert chunk_meta1["type"] == "audio_chunk"
+        audio1 = await asyncio.wait_for(ws.recv(), timeout=2.0)
+        assert isinstance(audio1, bytes)
+        assert len(audio1) > 0
+
+        chunk_meta2 = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+        assert chunk_meta2["type"] == "audio_chunk"
+        audio2 = await asyncio.wait_for(ws.recv(), timeout=2.0)
+        assert isinstance(audio2, bytes)
+        assert len(audio2) > 0
+
+        end_msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+        assert end_msg["type"] == "audio_end"
+        assert end_msg["chunks"] == 2
 
     recognizer.recognize.assert_called_once()
     agent.process.assert_called_once_with("你好")
-    synthesizer.synthesize.assert_called_once_with("你好，有什么可以帮你的？")
 
 
 @pytest.mark.asyncio
@@ -213,7 +229,12 @@ async def test_agent_error_returns_error(pipeline_server):
 async def test_synthesis_error_returns_error(pipeline_server):
     """测试语音合成错误时返回错误消息。"""
     ws_server, _, _, synthesizer = pipeline_server
-    synthesizer.synthesize.side_effect = RuntimeError("合成失败")
+
+    async def _failing_stream(_text):
+        raise RuntimeError("合成失败")
+        yield b""  # pragma: no cover
+
+    synthesizer.synthesize_stream = _failing_stream
     url = f"ws://127.0.0.1:{ws_server._port}"
 
     async with websockets.connect(url) as ws:
@@ -292,7 +313,10 @@ async def test_debug_bypass_agent_echoes_asr_text() -> None:
     agent.process = AsyncMock(return_value="不应被调用")
 
     synthesizer = MagicMock()
-    synthesizer.synthesize = AsyncMock(return_value=b"\xff\xfb\x90\x00" * 50)
+    async def _fake_stream(_text):
+        yield b"\xff\xfb\x90\x00" * 50
+
+    synthesizer.synthesize_stream = _fake_stream
 
     ws_server = _make_server(
         speech_recognizer=recognizer,
@@ -319,13 +343,18 @@ async def test_debug_bypass_agent_echoes_asr_text() -> None:
 
             msg3 = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
             assert msg3["type"] == "audio_response"
+            assert msg3["stream"] is True
 
+            chunk_meta = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            assert chunk_meta["type"] == "audio_chunk"
             audio = await asyncio.wait_for(ws.recv(), timeout=2.0)
             assert isinstance(audio, bytes)
             assert len(audio) > 0
 
+            end_msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            assert end_msg["type"] == "audio_end"
+
         recognizer.recognize.assert_called_once()
         agent.process.assert_not_called()
-        synthesizer.synthesize.assert_called_once_with("测试回声")
     finally:
         await ws_server.stop()

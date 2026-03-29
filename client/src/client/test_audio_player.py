@@ -87,7 +87,7 @@ class TestPlay:
 
         original_build = AudioPlayer._build_command
 
-        def capture_path(file_path: str) -> list[str]:
+        def capture_path(file_path: str, *_args, **_kwargs) -> list[str]:
             temp_paths.append(file_path)
             return ["echo", "test"]
 
@@ -206,15 +206,31 @@ class TestStop:
 
 
 class TestBuildCommand:
+    def test_uses_custom_player_command_with_placeholder(self) -> None:
+        """自定义命令包含 {file} 时应正确替换。"""
+        cmd = AudioPlayer._build_command(
+            "/tmp/test.mp3",
+            player_command="mpg123 -q -a bluealsa {file}",
+        )
+        assert cmd == ["mpg123", "-q", "-a", "bluealsa", "/tmp/test.mp3"]
+
+    def test_uses_custom_player_command_without_placeholder(self) -> None:
+        """自定义命令不含 {file} 时应自动追加文件路径。"""
+        cmd = AudioPlayer._build_command(
+            "/tmp/test.mp3",
+            player_command="mpg123 -q",
+        )
+        assert cmd == ["mpg123", "-q", "/tmp/test.mp3"]
+
     def test_finds_mpg123(self) -> None:
         """当 mpg123 可用时应使用 mpg123。"""
         def mock_which(name: str) -> str | None:
             return "/usr/bin/mpg123" if name == "mpg123" else None
 
         with patch("shutil.which", side_effect=mock_which):
-            cmd = AudioPlayer._build_command("/tmp/test.mp3")
+            cmd = AudioPlayer._build_command("/tmp/test.mp3", output_device="bluealsa")
 
-        assert cmd == ["mpg123", "-q", "/tmp/test.mp3"]
+        assert cmd == ["mpg123", "-a", "bluealsa", "-q", "/tmp/test.mp3"]
 
     def test_falls_back_to_ffplay(self) -> None:
         """当 mpg123 不可用但 ffplay 可用时应使用 ffplay。"""
@@ -232,9 +248,9 @@ class TestBuildCommand:
             return "/usr/bin/aplay" if name == "aplay" else None
 
         with patch("shutil.which", side_effect=mock_which):
-            cmd = AudioPlayer._build_command("/tmp/test.mp3")
+            cmd = AudioPlayer._build_command("/tmp/test.mp3", output_device="bluealsa")
 
-        assert cmd == ["aplay", "-q", "/tmp/test.mp3"]
+        assert cmd == ["aplay", "-D", "bluealsa", "-q", "/tmp/test.mp3"]
 
     def test_raises_when_no_player_found(self) -> None:
         """无可用播放器时应抛出 RuntimeError。"""
@@ -251,6 +267,27 @@ class TestBuildCommand:
             cmd = AudioPlayer._build_command("/some/path/audio.mp3")
 
         assert "/some/path/audio.mp3" in cmd
+
+    def test_prefers_aplay_for_wav(self) -> None:
+        """WAV 输入时应优先使用 aplay。"""
+        def mock_which(name: str) -> str | None:
+            if name in {"aplay", "mpg123", "ffplay"}:
+                return f"/usr/bin/{name}"
+            return None
+
+        with patch("shutil.which", side_effect=mock_which):
+            cmd = AudioPlayer._build_command("/tmp/test.wav", audio_format="wav")
+
+        assert cmd == ["aplay", "-q", "/tmp/test.wav"]
+
+
+class TestDetectAudioFormat:
+    def test_detect_wav(self) -> None:
+        wav_header = b"RIFF" + b"\x00\x00\x00\x00" + b"WAVE" + b"fmt "
+        assert AudioPlayer._detect_audio_format(wav_header) == "wav"
+
+    def test_detect_mp3(self) -> None:
+        assert AudioPlayer._detect_audio_format(b"ID3\x04\x00\x00") == "mp3"
 
 
 # ── 错误处理测试 ─────────────────────────────────────────────

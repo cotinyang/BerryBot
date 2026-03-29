@@ -202,6 +202,42 @@ class TestHandleInteraction:
             client._audio_player.play.assert_awaited_once_with(b"mp3-data")
 
     @pytest.mark.asyncio
+    async def test_full_interaction_flow_streaming_audio(self):
+        """测试流式响应时应调用 play_stream。"""
+        config = _make_config()
+        client = VoiceAssistantClient(config)
+
+        async def fake_stream():
+            yield b"chunk-1"
+            yield b"chunk-2"
+
+        with patch("client.main.handle_wake_prompt", new_callable=AsyncMock, return_value=False):
+            client._wake_word_detector.stop_listening = AsyncMock()
+            client._audio_recorder.start_recording = AsyncMock()
+            client._audio_recorder.stop_recording = AsyncMock(return_value=b"wav-data")
+            client._ws_client._connected = True
+            client._ws_client._ws = MagicMock()
+            client._ws_client.send_audio = AsyncMock()
+            client._ws_client.receive_response = AsyncMock(
+                return_value={
+                    "type": "audio_stream",
+                    "action": "",
+                    "data": None,
+                    "stream": fake_stream(),
+                    "format": "mp3",
+                }
+            )
+            client._audio_player.play_stream = AsyncMock()
+            client._audio_player.play = AsyncMock()
+            client._interrupt_handler.start_monitoring = AsyncMock()
+            client._interrupt_handler.stop_monitoring = AsyncMock()
+
+            await client._handle_interaction()
+
+            client._audio_player.play_stream.assert_awaited_once()
+            client._audio_player.play.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_interaction_connection_error_returns_to_standby(self):
         """通信错误时应返回待机状态。"""
         config = _make_config()

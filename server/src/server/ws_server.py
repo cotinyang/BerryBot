@@ -20,6 +20,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _text_preview(text: str, max_len: int = 200) -> str:
+    """生成适合日志展示的文本预览，避免超长日志。"""
+    normalized = " ".join(text.split())
+    if len(normalized) <= max_len:
+        return normalized
+    return f"{normalized[:max_len]}..."
+
+
 class WebSocketServer:
     """WebSocket 通信服务端。
 
@@ -229,6 +237,12 @@ class WebSocketServer:
                 return
             try:
                 text = self._speech_recognizer.recognize(audio_data)
+                logger.info(
+                    "ASR result from %s: len=%d text=\"%s\"",
+                    websocket.remote_address,
+                    len(text),
+                    _text_preview(text),
+                )
             except ValueError as e:
                 logger.warning("语音识别结果为空: %s", e)
                 await self._send_error(websocket, "recognition_failed", str(e))
@@ -241,13 +255,23 @@ class WebSocketServer:
             # Step 3: AI Agent processing (or bypass in debug mode)
             if self._debug_bypass_agent:
                 response_text = text
-                logger.info("Debug bypass enabled: skip agent, echo ASR text to TTS")
+                logger.info(
+                    "Debug bypass enabled for %s: echo ASR text to TTS, text=\"%s\"",
+                    websocket.remote_address,
+                    _text_preview(response_text),
+                )
             else:
                 if self._ai_agent is None:
                     await self._send_error(websocket, "agent_error", "AI Agent 服务未配置")
                     return
                 try:
                     response_text = await self._ai_agent.process(text)
+                    logger.info(
+                        "Agent response for %s: len=%d text=\"%s\"",
+                        websocket.remote_address,
+                        len(response_text),
+                        _text_preview(response_text),
+                    )
                 except (RuntimeError, Exception) as e:
                     logger.error("AI Agent 处理错误: %s", e)
                     await self._send_error(websocket, "agent_error", f"AI Agent 处理错误: {e}")
@@ -263,26 +287,57 @@ class WebSocketServer:
 
             # Step 4: Send "synthesizing" status
             await self._send_status(websocket, "synthesizing")
+            logger.info(
+                "TTS input for %s: len=%d text=\"%s\"",
+                websocket.remote_address,
+                len(response_text),
+                _text_preview(response_text),
+            )
 
             # Step 5: Speech synthesis
             if self._speech_synthesizer is None:
                 await self._send_error(websocket, "synthesis_error", "语音合成服务未配置")
                 return
             try:
-                audio_bytes = await self._speech_synthesizer.synthesize(response_text)
+                # Step 6: Stream audio response metadata + chunks
+                chunk_count = 0
+                total_bytes = 0
+                stream_started = False
+                async for chunk in self._speech_synthesizer.synthesize_stream(response_text):
+                    if not stream_started:
+                        await websocket.send(json.dumps({
+                            "type": "audio_response",
+                            "format": "mp3",
+                            "stream": True,
+                        }))
+                        stream_started = True
+
+                    chunk_count += 1
+                    total_bytes += len(chunk)
+                    await websocket.send(json.dumps({
+                        "type": "audio_chunk",
+                        "seq": chunk_count,
+                    }))
+                    await websocket.send(chunk)
+
+                if chunk_count == 0:
+                    raise RuntimeError("语音合成未产生音频数据")
+
+                await websocket.send(json.dumps({
+                    "type": "audio_end",
+                    "format": "mp3",
+                    "chunks": chunk_count,
+                }))
             except (ValueError, RuntimeError, Exception) as e:
                 logger.error("语音合成错误: %s", e)
                 await self._send_error(websocket, "synthesis_error", f"语音合成错误: {e}")
                 return
-
-            # Step 6: Send audio response metadata + binary audio
-            response_metadata = json.dumps({
-                "type": "audio_response",
-                "format": "mp3",
-            })
-            await websocket.send(response_metadata)
-            await websocket.send(audio_bytes)
-            logger.info("Audio response sent to %s: %d bytes", websocket.remote_address, len(audio_bytes))
+            logger.info(
+                "Audio stream sent to %s: chunks=%d, size=%d bytes",
+                websocket.remote_address,
+                chunk_count,
+                total_bytes,
+            )
 
         except asyncio.CancelledError:
             logger.info("Processing cancelled (interrupt) for %s", websocket.remote_address)

@@ -39,6 +39,16 @@ RECONNECT_INTERVAL="${RECONNECT_INTERVAL:-5.0}"
 MAX_RECONNECT_RETRIES="${MAX_RECONNECT_RETRIES:-3}"
 SESSION_TIMEOUT="${SESSION_TIMEOUT:-5.0}"
 SESSION_END_AUDIO="${SESSION_END_AUDIO:-assets/end.wav}"
+AUDIO_PLAYER_COMMAND="${AUDIO_PLAYER_COMMAND:-}"
+AUDIO_OUTPUT_DEVICE="${AUDIO_OUTPUT_DEVICE:-}"
+
+# 将相对路径解析到脚本目录，避免从其它 cwd 启动时找不到资产文件
+if [[ "$WAKE_PROMPT_AUDIO" != /* ]]; then
+    WAKE_PROMPT_AUDIO="${SCRIPT_DIR}/${WAKE_PROMPT_AUDIO}"
+fi
+if [[ "$SESSION_END_AUDIO" != /* ]]; then
+    SESSION_END_AUDIO="${SCRIPT_DIR}/${SESSION_END_AUDIO}"
+fi
 
 # ── 函数 ──────────────────────────────────────────────
 
@@ -62,6 +72,16 @@ do_start() {
     fi
 
     echo "Starting ${APP_NAME}..."
+    local -a extra_args=()
+    if [ -n "$AUDIO_PLAYER_COMMAND" ]; then
+        extra_args+=(--audio-player-command "$AUDIO_PLAYER_COMMAND")
+        echo "  Audio player command override enabled"
+    fi
+    if [ -n "$AUDIO_OUTPUT_DEVICE" ]; then
+        extra_args+=(--audio-output-device "$AUDIO_OUTPUT_DEVICE")
+        echo "  Audio output device: ${AUDIO_OUTPUT_DEVICE}"
+    fi
+
     nohup uv run python -m client.main \
         --server-url "$SERVER_URL" \
         --auth-token "$AUTH_TOKEN" \
@@ -79,6 +99,7 @@ do_start() {
         --max-reconnect-retries "$MAX_RECONNECT_RETRIES" \
         --session-timeout "$SESSION_TIMEOUT" \
         --session-end-audio-path "$SESSION_END_AUDIO" \
+        "${extra_args[@]}" \
         >> "$LOG_FILE" 2>&1 &
 
     local pid=$!

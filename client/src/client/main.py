@@ -108,6 +108,16 @@ def parse_args(argv: list[str] | None = None) -> ClientConfig:
         default="assets/end.wav",
         help="会话结束提示音文件路径（默认: assets/end.wav）",
     )
+    parser.add_argument(
+        "--audio-player-command",
+        default="",
+        help="自定义音频播放命令，支持 {file} 占位符",
+    )
+    parser.add_argument(
+        "--audio-output-device",
+        default="",
+        help="音频输出设备名称（例如 bluealsa）",
+    )
 
     args = parser.parse_args(argv)
     return ClientConfig(
@@ -127,6 +137,8 @@ def parse_args(argv: list[str] | None = None) -> ClientConfig:
         max_reconnect_retries=args.max_reconnect_retries,
         session_timeout=args.session_timeout,
         session_end_audio_path=args.session_end_audio_path,
+        audio_player_command=args.audio_player_command,
+        audio_output_device=args.audio_output_device,
     )
 
 
@@ -145,7 +157,10 @@ class VoiceAssistantClient:
             sample_rate=config.sample_rate,
             energy_threshold=config.energy_threshold,
         )
-        self._audio_player = AudioPlayer()
+        self._audio_player = AudioPlayer(
+            player_command=config.audio_player_command,
+            output_device=config.audio_output_device,
+        )
         self._interrupt_handler = InterruptHandler(
             energy_threshold=config.energy_threshold,
         )
@@ -356,14 +371,20 @@ class VoiceAssistantClient:
             return
 
         # 播放音频（播放完成后 _on_playback_complete 会转到 LISTENING）
-        response_audio = response["data"]
         self._state_machine.transition(ClientState.PLAYING)
 
         monitor_task = asyncio.ensure_future(
             self._interrupt_handler.start_monitoring()
         )
         try:
-            await self._audio_player.play(response_audio)
+            if response["type"] == "audio_stream":
+                await self._audio_player.play_stream(
+                    response["stream"],
+                    audio_format=response.get("format", "mp3"),
+                )
+            else:
+                response_audio = response["data"]
+                await self._audio_player.play(response_audio)
         finally:
             await self._interrupt_handler.stop_monitoring()
             if not monitor_task.done():

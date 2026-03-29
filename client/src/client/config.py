@@ -25,3 +25,5 @@ class ClientConfig:
     max_reconnect_retries: int = 3
     session_timeout: float = 5.0               # 连续对话超时（秒），超时后结束会话
     session_end_audio_path: str = "assets/end.wav"  # 会话结束提示音
+    audio_player_command: str = ""            # 自定义播放器命令，支持 {file}
+    audio_output_device: str = ""             # 播放设备名称（如 bluealsa）

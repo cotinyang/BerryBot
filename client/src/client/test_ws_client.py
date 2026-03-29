@@ -113,6 +113,23 @@ class TestReceiveAudio:
             assert result == audio_bytes
 
     @pytest.mark.asyncio
+    async def test_receive_audio_stream_success(self, client, mock_ws):
+        chunk1 = b"\xff\xfb\x90\x00" * 20
+        chunk2 = b"\xff\xfb\x90\x00" * 10
+        mock_ws.recv = AsyncMock(side_effect=[
+            json.dumps({"type": "audio_response", "format": "mp3", "stream": True}),
+            json.dumps({"type": "audio_chunk", "seq": 1}),
+            chunk1,
+            json.dumps({"type": "audio_chunk", "seq": 2}),
+            chunk2,
+            json.dumps({"type": "audio_end", "format": "mp3", "chunks": 2}),
+        ])
+        with patch("client.ws_client.websockets.connect", new_callable=AsyncMock, return_value=mock_ws):
+            await client.connect()
+            result = await client.receive_audio()
+            assert result == chunk1 + chunk2
+
+    @pytest.mark.asyncio
     async def test_receive_audio_server_error(self, client, mock_ws):
         mock_ws.recv = AsyncMock(return_value=json.dumps({
             "type": "error",

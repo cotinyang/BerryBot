@@ -1,6 +1,7 @@
 """WebSocket 通信客户端：管理与服务端的 WebSocket 连接。"""
 
 import asyncio
+from collections.abc import AsyncIterator
 import json
 import logging
 import ssl
@@ -138,8 +139,9 @@ class WebSocketClient:
 
         Returns:
             dict with keys:
-            - type: "audio" | "command" | "status"
+            - type: "audio" | "audio_stream" | "command" | "status"
             - data: bytes (for audio) or None
+            - stream: AsyncIterator[bytes] (for audio_stream) or None
             - action: str (for command, e.g. "end_session")
 
         Raises:
@@ -168,13 +170,34 @@ class WebSocketClient:
                 if msg_type == "command":
                     action = metadata.get("action", "")
                     logger.info("Received command from server: %s", action)
-                    return {"type": "command", "action": action, "data": None}
+                    return {
+                        "type": "command",
+                        "action": action,
+                        "data": None,
+                        "stream": None,
+                    }
 
                 if msg_type == "audio_response":
+                    if metadata.get("stream"):
+                        audio_format = metadata.get("format", "mp3")
+                        return {
+                            "type": "audio_stream",
+                            "action": "",
+                            "data": None,
+                            "stream": self._iter_audio_chunks(),
+                            "format": audio_format,
+                        }
+
                     audio_data = await self._ws.recv()
                     if not isinstance(audio_data, bytes):
                         raise RuntimeError("Expected binary audio frame")
-                    return {"type": "audio", "action": "", "data": audio_data}
+                    return {
+                        "type": "audio",
+                        "action": "",
+                        "data": audio_data,
+                        "stream": None,
+                        "format": metadata.get("format", "mp3"),
+                    }
 
                 logger.warning("Unknown response type: %s", msg_type)
                 continue
@@ -198,7 +221,44 @@ class WebSocketClient:
         response = await self.receive_response()
         if response["type"] == "command":
             raise RuntimeError(f"Unexpected command: {response['action']}")
+        if response["type"] == "audio_stream":
+            chunks = [chunk async for chunk in response["stream"]]
+            return b"".join(chunks)
         return response["data"]
+
+    async def _iter_audio_chunks(self) -> AsyncIterator[bytes]:
+        """读取流式音频 chunk，直到收到 audio_end。"""
+        if not self.is_connected or self._ws is None:
+            raise ConnectionError("Not connected to server")
+
+        while True:
+            raw = await self._ws.recv()
+            if isinstance(raw, bytes):
+                raise RuntimeError("Unexpected binary frame without chunk metadata")
+
+            metadata = json.loads(raw)
+            msg_type = metadata.get("type")
+
+            if msg_type == "audio_chunk":
+                audio_data = await self._ws.recv()
+                if not isinstance(audio_data, bytes):
+                    raise RuntimeError("Expected binary audio chunk")
+                yield audio_data
+                continue
+
+            if msg_type == "audio_end":
+                return
+
+            if msg_type == "status":
+                logger.debug("Server status during stream: %s", metadata.get("status"))
+                continue
+
+            if msg_type == "error":
+                code = metadata.get("code", "unknown")
+                msg = metadata.get("message", "Unknown error")
+                raise RuntimeError(f"Server error [{code}]: {msg}")
+
+            raise RuntimeError(f"Unexpected stream message type: {msg_type}")
 
     def on_disconnect(self, callback: Callable[[], None]) -> None:
         """注册断开连接回调。

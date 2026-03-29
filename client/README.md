@@ -117,6 +117,32 @@ vim .env
 | `MAX_RECONNECT_RETRIES` | `3` | 最大重连次数 |
 | `SESSION_TIMEOUT` | `5.0` | 连续对话超时（秒），超时后结束会话 |
 | `SESSION_END_AUDIO` | `assets/end.wav` | 会话结束提示音文件 |
+| `AUDIO_PLAYER_COMMAND` | 空 | 自定义播放器命令，支持 `{file}` 占位符 |
+| `AUDIO_OUTPUT_DEVICE` | 空 | 播放设备名（如 `bluealsa`） |
+
+### 树莓派 + 蓝牙 Echo Dot 排障
+
+如果日志里出现大量 ALSA/JACK 错误，且唤醒后没有听到“我在”或结束音，通常是播放设备未指向蓝牙输出。
+
+推荐先在树莓派上验证蓝牙播放是否可用：
+
+```bash
+mpg123 -a bluealsa assets/wo_zai.mp3
+```
+
+若上面命令可播放，再在 `.env` 中配置：
+
+```bash
+AUDIO_OUTPUT_DEVICE=bluealsa
+```
+
+如果你的环境设备名不是 `bluealsa`，可以直接指定完整命令：
+
+```bash
+AUDIO_PLAYER_COMMAND=mpg123 -q -a bluealsa {file}
+```
+
+重启客户端后，`client.log` 会记录播放器命令、返回码和 stderr，便于定位无声问题。
 
 ## 使用
 
