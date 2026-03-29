@@ -14,6 +14,8 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
+from client.audio_backend import create_pyaudio, open_input_stream
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,8 +70,9 @@ class SherpaWakeWordDetector:
         while self._listening:
             try:
                 if self._pa is None:
-                    self._pa = pyaudio.PyAudio()
-                    self._audio_stream = self._pa.open(
+                    self._pa = create_pyaudio(pyaudio)
+                    self._audio_stream = open_input_stream(
+                        self._pa,
                         format=pyaudio.paFloat32,
                         channels=1,
                         rate=self._sample_rate,

@@ -5,6 +5,7 @@ import asyncio
 import logging
 import signal
 
+from client.audio_backend import create_pyaudio, open_input_stream
 from client.audio_player import AudioPlayer
 from client.audio_recorder import AudioRecorder
 from client.config import ClientConfig
@@ -314,10 +315,11 @@ class VoiceAssistantClient:
         except RuntimeError:
             return False
 
-        pa = pyaudio.PyAudio()
+        pa = create_pyaudio(pyaudio)
         stream = None
         try:
-            stream = pa.open(
+            stream = open_input_stream(
+                pa,
                 format=pyaudio.paInt16,
                 channels=1,
                 rate=self._config.sample_rate,

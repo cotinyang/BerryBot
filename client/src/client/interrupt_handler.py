@@ -5,6 +5,8 @@ import logging
 import struct
 from collections.abc import Callable
 
+from client.audio_backend import create_pyaudio, open_input_stream
+
 logger = logging.getLogger(__name__)
 
 
@@ -73,9 +75,10 @@ class InterruptHandler:
             ) from e
 
         self._monitoring = True
-        self._pa = pyaudio.PyAudio()
+        self._pa = create_pyaudio(pyaudio)
         logger.info("开始打断监听")
-        self._stream = self._pa.open(  # type: ignore[union-attr]
+        self._stream = open_input_stream(
+            self._pa,
             format=pyaudio.paInt16,
             channels=self._channels,
             rate=self._sample_rate,

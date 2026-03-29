@@ -5,6 +5,8 @@ import logging
 import struct
 from collections.abc import Callable
 
+from client.audio_backend import create_pyaudio, open_input_stream
+
 logger = logging.getLogger(__name__)
 
 
@@ -57,8 +59,9 @@ class PorcupineWakeWordDetector:
         while self._listening:
             try:
                 if self._pa is None:
-                    self._pa = pyaudio.PyAudio()
-                    self._stream = self._pa.open(
+                    self._pa = create_pyaudio(pyaudio)
+                    self._stream = open_input_stream(
+                        self._pa,
                         format=pyaudio.paInt16,
                         channels=1,
                         rate=self._porcupine.sample_rate,

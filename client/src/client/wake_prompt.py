@@ -8,6 +8,7 @@
 import logging
 import sys
 
+from client.audio_backend import create_pyaudio, open_input_stream
 from client.audio_player import AudioPlayer
 from client.config import ClientConfig
 from client.interrupt_handler import InterruptHandler
@@ -63,10 +64,11 @@ async def handle_wake_prompt(
     """
     pyaudio = _get_pyaudio()
 
-    pa = pyaudio.PyAudio()
+    pa = create_pyaudio(pyaudio)
     stream = None
     try:
-        stream = pa.open(
+        stream = open_input_stream(
+            pa,
             format=pyaudio.paInt16,
             channels=_CHANNELS,
             rate=_SAMPLE_RATE,
