@@ -16,14 +16,26 @@ from pathlib import Path
 ENV_KEY_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
 
 
-def parse_env_keys(path: Path) -> set[str]:
-    """Parse env-like file and return declared keys."""
+def parse_env_keys(path: Path, include_commented: bool = False) -> set[str]:
+    """Parse env-like file and return declared keys.
+
+    Args:
+        path: Env file path.
+        include_commented: Whether lines like '# KEY=value' count as declared.
+    """
     keys: set[str] = set()
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
-        if not line or line.startswith("#"):
+        if not line:
             continue
-        match = ENV_KEY_RE.match(raw_line)
+
+        candidate = raw_line
+        if line.startswith("#"):
+            if not include_commented:
+                continue
+            candidate = line[1:].lstrip()
+
+        match = ENV_KEY_RE.match(candidate)
         if match:
             keys.add(match.group(1))
     return keys
@@ -55,8 +67,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: env file not found: {env_path}")
         return 2
 
-    sample_keys = parse_env_keys(sample_path)
-    env_keys = parse_env_keys(env_path)
+    # Sample should include commented template keys by default.
+    sample_keys = parse_env_keys(sample_path, include_commented=True)
+    # Env should only include actively configured keys.
+    env_keys = parse_env_keys(env_path, include_commented=False)
 
     missing_in_env = sorted(sample_keys - env_keys)
     extra_in_env = sorted(env_keys - sample_keys)

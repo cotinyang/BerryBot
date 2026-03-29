@@ -5,7 +5,6 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
 
 from client.ws_client import WebSocketClient
 
@@ -17,6 +16,7 @@ def client():
         server_url="ws://localhost:8765",
         max_retries=3,
         retry_interval=0.01,  # 极短间隔加速测试
+        receive_timeout=0.1,
     )
 
 

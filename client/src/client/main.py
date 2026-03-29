@@ -148,6 +148,9 @@ class VoiceAssistantClient:
     def __init__(self, config: ClientConfig) -> None:
         self._config = config
         self._running = False
+        self._interrupt_task: asyncio.Task[None] | None = None
+        self._wake_word_task: asyncio.Task[None] | None = None
+        self._background_tasks: set[asyncio.Task[object]] = set()
 
         # 初始化组件
         self._state_machine = StateMachine()
@@ -202,20 +205,24 @@ class VoiceAssistantClient:
         if self._state_machine.state != ClientState.STANDBY:
             return
         logger.info("唤醒词检测到，启动交互流程")
-        asyncio.ensure_future(self._handle_interaction())
+        self._track_task(asyncio.create_task(self._handle_interaction()))
 
     def _on_playback_complete(self) -> None:
         """播放完成回调 → 进入连续对话监听状态。"""
         if self._state_machine.state == ClientState.PLAYING:
             logger.info("播放完成，进入连续对话监听")
             self._state_machine.transition(ClientState.LISTENING)
-            asyncio.ensure_future(self._handle_listening())
+            self._track_task(asyncio.create_task(self._handle_listening()))
 
     def _on_interrupt(self) -> None:
         """语音打断回调。"""
         if self._state_machine.state == ClientState.PLAYING:
+            if self._interrupt_task is not None and not self._interrupt_task.done():
+                logger.info("打断处理中，忽略重复打断事件")
+                return
             logger.info("检测到语音打断")
-            asyncio.ensure_future(self._handle_interrupt())
+            self._interrupt_task = asyncio.create_task(self._handle_interrupt())
+            self._track_task(self._interrupt_task)
 
     def _on_connection_failed(self) -> None:
         """所有重连尝试失败后回调。"""
@@ -355,7 +362,13 @@ class VoiceAssistantClient:
             return
 
         await self._ws_client.send_audio(audio_data)
-        self._state_machine.transition(ClientState.WAITING_RESPONSE)
+        self._safe_transition(ClientState.WAITING_RESPONSE)
+        if self._state_machine.state != ClientState.WAITING_RESPONSE:
+            logger.warning(
+                "发送后状态不是 waiting，终止本轮处理: %s",
+                self._state_machine.state.value,
+            )
+            return
 
         # 接收响应（可能是音频或指令）
         response = await self._ws_client.receive_response()
@@ -368,6 +381,13 @@ class VoiceAssistantClient:
                 return
             logger.warning("未知指令: %s，忽略", action)
             await self._end_session()
+            return
+
+        if self._state_machine.state != ClientState.WAITING_RESPONSE:
+            logger.warning(
+                "收到响应时状态已变更为 %s，丢弃本次响应",
+                self._state_machine.state.value,
+            )
             return
 
         # 播放音频（播放完成后 _on_playback_complete 会转到 LISTENING）
@@ -411,8 +431,8 @@ class VoiceAssistantClient:
         self._safe_transition(ClientState.STANDBY)
 
         # 重启唤醒词监听
-        logger.info("重启唤醒词监听...")
-        asyncio.ensure_future(self._restart_wake_word())
+        logger.info("确保唤醒词监听任务处于运行状态")
+        await self._restart_wake_word()
 
     async def _handle_interrupt(self) -> None:
         """处理语音打断：停止播放 → 发送 interrupt → 录音 → 继续对话。"""
@@ -441,14 +461,26 @@ class VoiceAssistantClient:
         except ValueError as exc:
             logger.warning("状态转换失败: %s", exc)
 
+    def _track_task(self, task: asyncio.Task[object]) -> asyncio.Task[object]:
+        """跟踪后台任务，便于停止时统一清理。"""
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return task
+
+    def _ensure_wake_word_task(self) -> None:
+        """确保仅存在一个唤醒词监听后台任务。"""
+        if not self._running:
+            return
+        if self._wake_word_task is not None and not self._wake_word_task.done():
+            return
+        self._wake_word_task = asyncio.create_task(self._run_wake_word())
+        self._track_task(self._wake_word_task)
+
     # ── 启动与关闭 ────────────────────────────────────────
 
     async def _restart_wake_word(self) -> None:
-        """重启唤醒词监听。"""
-        try:
-            await self._wake_word_detector.start_listening()
-        except Exception:
-            logger.exception("重启唤醒词监听失败")
+        """在需要时重建唤醒词监听后台任务。"""
+        self._ensure_wake_word_task()
 
     async def start(self) -> None:
         """启动客户端：连接服务端并开始唤醒词监听。"""
@@ -466,7 +498,7 @@ class VoiceAssistantClient:
 
         # 启动唤醒词监听（后台任务）
         logger.info("开始唤醒词监听...")
-        asyncio.ensure_future(self._run_wake_word())
+        self._ensure_wake_word_task()
 
         # 保持事件循环运行，直到 stop() 被调用
         await self._stop_event.wait()
@@ -494,6 +526,20 @@ class VoiceAssistantClient:
         await self._audio_player.stop()
         await self._interrupt_handler.stop_monitoring()
         await self._ws_client.disconnect()
+
+        current_task = asyncio.current_task()
+        pending_tasks = [
+            task for task in self._background_tasks
+            if task is not current_task and not task.done()
+        ]
+        for task in pending_tasks:
+            task.cancel()
+        if pending_tasks:
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
+
+        self._background_tasks.clear()
+        self._wake_word_task = None
+        self._interrupt_task = None
 
         if hasattr(self, '_stop_event'):
             self._stop_event.set()

@@ -126,12 +126,20 @@ class TestStop:
 
 
 class TestCallbacks:
-    def test_on_playback_complete_transitions_to_listening(self):
+    @pytest.mark.asyncio
+    async def test_on_playback_complete_transitions_to_listening(self):
         config = _make_config()
         client = VoiceAssistantClient(config)
         # Force state to PLAYING
         client._state_machine._state = ClientState.PLAYING
+        client._handle_listening = AsyncMock()
         client._on_playback_complete()
+        for task in list(client._background_tasks):
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         assert client.state_machine.state == ClientState.LISTENING
 
     def test_on_playback_complete_ignored_if_not_playing(self):
@@ -170,6 +178,19 @@ class TestCallbacks:
             client._on_wake_word()
             # ensure_future not called since state != STANDBY
             # _handle_interaction should not be scheduled
+
+    def test_on_interrupt_ignored_when_task_running(self):
+        config = _make_config()
+        client = VoiceAssistantClient(config)
+        client._state_machine._state = ClientState.PLAYING
+
+        running_task = MagicMock()
+        running_task.done.return_value = False
+        client._interrupt_task = running_task
+
+        with patch("client.main.asyncio.ensure_future") as mock_ensure:
+            client._on_interrupt()
+            mock_ensure.assert_not_called()
 
 
 class TestHandleInteraction:
@@ -280,6 +301,32 @@ class TestHandleInteraction:
             await client._handle_interaction()
 
             assert client.state_machine.state == ClientState.STANDBY
+
+    @pytest.mark.asyncio
+    async def test_do_record_send_play_drops_response_when_state_changed(self):
+        """等待响应期间若状态已变化，应丢弃响应而不进入播放。"""
+        config = _make_config()
+        client = VoiceAssistantClient(config)
+        client._state_machine._state = ClientState.RECORDING
+
+        client._audio_recorder.start_recording = AsyncMock()
+        client._audio_recorder.stop_recording = AsyncMock(return_value=b"wav-data")
+        client._ws_client._connected = True
+        client._ws_client._ws = MagicMock()
+        client._ws_client.send_audio = AsyncMock()
+
+        async def _fake_receive_response():
+            client._state_machine._state = ClientState.STANDBY
+            return {"type": "audio", "action": "", "data": b"mp3-data"}
+
+        client._ws_client.receive_response = AsyncMock(side_effect=_fake_receive_response)
+        client._audio_player.play = AsyncMock()
+        client._interrupt_handler.start_monitoring = AsyncMock()
+        client._interrupt_handler.stop_monitoring = AsyncMock()
+
+        await client._do_record_send_play()
+
+        client._audio_player.play.assert_not_called()
 
 
 class TestHandleInterrupt:

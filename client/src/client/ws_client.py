@@ -27,11 +27,13 @@ class WebSocketClient:
         max_retries: int = 3,
         retry_interval: float = 5.0,
         auth_token: str = "",
+        receive_timeout: float = 30.0,
     ) -> None:
         self._server_url = server_url
         self._max_retries = max_retries
         self._retry_interval = retry_interval
         self._auth_token = auth_token
+        self._receive_timeout = receive_timeout
         self._ws: ClientConnection | None = None
         self._connected = False
         self._disconnect_callbacks: list[Callable[[], None]] = []
@@ -154,7 +156,7 @@ class WebSocketClient:
         try:
             # 跳过 status 消息，等待实际响应
             while True:
-                raw = await self._ws.recv()
+                raw = await self._recv_frame()
                 metadata = json.loads(raw)
                 msg_type = metadata.get("type")
 
@@ -188,7 +190,7 @@ class WebSocketClient:
                             "format": audio_format,
                         }
 
-                    audio_data = await self._ws.recv()
+                    audio_data = await self._recv_frame()
                     if not isinstance(audio_data, bytes):
                         raise RuntimeError("Expected binary audio frame")
                     return {
@@ -203,6 +205,8 @@ class WebSocketClient:
                 continue
 
         except RuntimeError:
+            raise
+        except ConnectionError:
             raise
         except Exception as exc:
             logger.error("Failed to receive response: %s", exc)
@@ -232,7 +236,7 @@ class WebSocketClient:
             raise ConnectionError("Not connected to server")
 
         while True:
-            raw = await self._ws.recv()
+            raw = await self._recv_frame()
             if isinstance(raw, bytes):
                 raise RuntimeError("Unexpected binary frame without chunk metadata")
 
@@ -240,7 +244,7 @@ class WebSocketClient:
             msg_type = metadata.get("type")
 
             if msg_type == "audio_chunk":
-                audio_data = await self._ws.recv()
+                audio_data = await self._recv_frame()
                 if not isinstance(audio_data, bytes):
                     raise RuntimeError("Expected binary audio chunk")
                 yield audio_data
@@ -259,6 +263,24 @@ class WebSocketClient:
                 raise RuntimeError(f"Server error [{code}]: {msg}")
 
             raise RuntimeError(f"Unexpected stream message type: {msg_type}")
+
+    async def _recv_frame(self) -> str | bytes:
+        """带超时地读取一帧消息，避免无限等待。"""
+        if not self.is_connected or self._ws is None:
+            raise ConnectionError("Not connected to server")
+
+        try:
+            return await asyncio.wait_for(
+                self._ws.recv(),
+                timeout=self._receive_timeout,
+            )
+        except asyncio.TimeoutError as exc:
+            logger.error(
+                "Timed out waiting for server frame after %.1fs",
+                self._receive_timeout,
+            )
+            await self._handle_disconnect()
+            raise ConnectionError("Timed out waiting for server response") from exc
 
     def on_disconnect(self, callback: Callable[[], None]) -> None:
         """注册断开连接回调。
