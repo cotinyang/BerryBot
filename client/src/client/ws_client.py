@@ -245,6 +245,9 @@ class WebSocketClient:
         if not self.is_connected or self._ws is None:
             raise ConnectionError("Not connected to server")
 
+        segment_id: int | None = None
+        segment_buffer: bytearray | None = None
+
         while True:
             raw = await self._recv_frame()
             if isinstance(raw, bytes):
@@ -253,14 +256,38 @@ class WebSocketClient:
             metadata = json.loads(raw)
             msg_type = metadata.get("type")
 
+            if msg_type == "audio_segment_start":
+                segment_id = int(metadata.get("segment_id", 0))
+                segment_buffer = bytearray()
+                continue
+
             if msg_type == "audio_chunk":
                 audio_data = await self._recv_frame()
                 if not isinstance(audio_data, bytes):
                     raise RuntimeError("Expected binary audio chunk")
-                yield audio_data
+                if segment_buffer is not None:
+                    segment_buffer.extend(audio_data)
+                else:
+                    yield audio_data
+                continue
+
+            if msg_type == "audio_segment_end":
+                end_segment_id = int(metadata.get("segment_id", 0))
+                if segment_buffer is not None:
+                    if segment_id is not None and end_segment_id != segment_id:
+                        raise RuntimeError(
+                            f"Mismatched segment id: start={segment_id}, end={end_segment_id}"
+                        )
+                    if segment_buffer:
+                        yield bytes(segment_buffer)
+                segment_id = None
+                segment_buffer = None
                 continue
 
             if msg_type == "audio_end":
+                if segment_buffer is not None and segment_buffer:
+                    # 容错：若服务端异常漏发 segment_end，仍尽量播放已收内容。
+                    yield bytes(segment_buffer)
                 return
 
             if msg_type == "status":

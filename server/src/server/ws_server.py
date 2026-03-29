@@ -303,22 +303,64 @@ class WebSocketServer:
                 chunk_count = 0
                 total_bytes = 0
                 stream_started = False
-                async for chunk in self._speech_synthesizer.synthesize_stream(response_text):
-                    if not stream_started:
-                        await websocket.send(json.dumps({
-                            "type": "audio_response",
-                            "format": "mp3",
-                            "stream": True,
-                        }))
-                        stream_started = True
+                synth_type = type(self._speech_synthesizer)
+                supports_segment_meta = (
+                    callable(getattr(synth_type, "iter_segments", None))
+                    and callable(getattr(synth_type, "synthesize_segment_stream", None))
+                )
 
-                    chunk_count += 1
-                    total_bytes += len(chunk)
-                    await websocket.send(json.dumps({
-                        "type": "audio_chunk",
-                        "seq": chunk_count,
-                    }))
-                    await websocket.send(chunk)
+                if supports_segment_meta:
+                    segments = self._speech_synthesizer.iter_segments(response_text)
+                    for segment_id, segment_text in enumerate(segments, start=1):
+                        segment_chunk_count = 0
+                        if not stream_started:
+                            await websocket.send(json.dumps({
+                                "type": "audio_response",
+                                "format": "mp3",
+                                "stream": True,
+                                "segment_batch": True,
+                            }))
+                            stream_started = True
+
+                        await websocket.send(json.dumps({
+                            "type": "audio_segment_start",
+                            "segment_id": segment_id,
+                            "text_len": len(segment_text),
+                        }))
+
+                        async for chunk in self._speech_synthesizer.synthesize_segment_stream(segment_text):
+                            chunk_count += 1
+                            segment_chunk_count += 1
+                            total_bytes += len(chunk)
+                            await websocket.send(json.dumps({
+                                "type": "audio_chunk",
+                                "seq": chunk_count,
+                                "segment_id": segment_id,
+                            }))
+                            await websocket.send(chunk)
+
+                        await websocket.send(json.dumps({
+                            "type": "audio_segment_end",
+                            "segment_id": segment_id,
+                            "chunks": segment_chunk_count,
+                        }))
+                else:
+                    async for chunk in self._speech_synthesizer.synthesize_stream(response_text):
+                        if not stream_started:
+                            await websocket.send(json.dumps({
+                                "type": "audio_response",
+                                "format": "mp3",
+                                "stream": True,
+                            }))
+                            stream_started = True
+
+                        chunk_count += 1
+                        total_bytes += len(chunk)
+                        await websocket.send(json.dumps({
+                            "type": "audio_chunk",
+                            "seq": chunk_count,
+                        }))
+                        await websocket.send(chunk)
 
                 if chunk_count == 0:
                     raise RuntimeError("语音合成未产生音频数据")

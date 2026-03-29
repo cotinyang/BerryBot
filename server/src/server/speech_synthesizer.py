@@ -39,23 +39,31 @@ class SpeechSynthesizer:
             raise ValueError("合成文本不能为空")
 
         try:
-            if self._sentence_stream:
-                segments = self._split_text_segments(text)
-            else:
-                segments = [text.strip()]
-
-            for segment in segments:
-                communicate = edge_tts.Communicate(segment, self._voice)
-                async for chunk in communicate.stream():
-                    if chunk.get("type") == "audio":
-                        data = chunk.get("data", b"")
-                        if data:
-                            yield data
+            for segment in self.iter_segments(text):
+                async for data in self.synthesize_segment_stream(segment):
+                    yield data
         except ValueError:
             raise
         except Exception as e:
             logger.error("语音合成错误: %s", e)
             raise RuntimeError(f"语音合成错误: {e}") from e
+
+    def iter_segments(self, text: str) -> list[str]:
+        """根据配置返回要合成的文本分段。"""
+        if not text or not text.strip():
+            raise ValueError("合成文本不能为空")
+        if self._sentence_stream:
+            return self._split_text_segments(text)
+        return [text.strip()]
+
+    async def synthesize_segment_stream(self, segment: str) -> AsyncIterator[bytes]:
+        """合成单个 segment 的音频流。"""
+        communicate = edge_tts.Communicate(segment, self._voice)
+        async for chunk in communicate.stream():
+            if chunk.get("type") == "audio":
+                data = chunk.get("data", b"")
+                if data:
+                    yield data
 
     def _split_text_segments(self, text: str) -> list[str]:
         """按句拆分文本；超长句进一步切块，降低单次 TTS 时延抖动。"""

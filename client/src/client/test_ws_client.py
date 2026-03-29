@@ -141,6 +141,32 @@ class TestReceiveAudio:
             assert result == chunk1 + chunk2
 
     @pytest.mark.asyncio
+    async def test_receive_audio_stream_segment_batch_success(self, client, mock_ws):
+        s1c1 = b"A" * 5
+        s1c2 = b"B" * 3
+        s2c1 = b"C" * 4
+        mock_ws.recv = AsyncMock(side_effect=[
+            json.dumps({"type": "audio_response", "format": "mp3", "stream": True, "segment_batch": True}),
+            json.dumps({"type": "audio_segment_start", "segment_id": 1}),
+            json.dumps({"type": "audio_chunk", "seq": 1, "segment_id": 1}),
+            s1c1,
+            json.dumps({"type": "audio_chunk", "seq": 2, "segment_id": 1}),
+            s1c2,
+            json.dumps({"type": "audio_segment_end", "segment_id": 1, "chunks": 2}),
+            json.dumps({"type": "audio_segment_start", "segment_id": 2}),
+            json.dumps({"type": "audio_chunk", "seq": 3, "segment_id": 2}),
+            s2c1,
+            json.dumps({"type": "audio_segment_end", "segment_id": 2, "chunks": 1}),
+            json.dumps({"type": "audio_end", "format": "mp3", "chunks": 3}),
+        ])
+        with patch("client.ws_client.websockets.connect", new_callable=AsyncMock, return_value=mock_ws):
+            await client.connect()
+            response = await client.receive_response()
+            chunks = [chunk async for chunk in response["stream"]]
+            # 每个 segment 应先聚合后再输出
+            assert chunks == [s1c1 + s1c2, s2c1]
+
+    @pytest.mark.asyncio
     async def test_receive_audio_server_error(self, client, mock_ws):
         mock_ws.recv = AsyncMock(return_value=json.dumps({
             "type": "error",

@@ -358,3 +358,86 @@ async def test_debug_bypass_agent_echoes_asr_text() -> None:
         agent.process.assert_not_called()
     finally:
         await ws_server.stop()
+
+
+@pytest.mark.asyncio
+async def test_segment_batch_stream_metadata_emitted() -> None:
+    """支持分段合成时应发送 segment start/end 元数据。"""
+    recognizer = MagicMock()
+    recognizer.recognize = MagicMock(return_value="第一句。第二句。")
+
+    agent = MagicMock()
+    agent.process = AsyncMock(return_value="第一句。第二句。")
+
+    class _SegmentedSynthesizer:
+        def iter_segments(self, _text: str):
+            return ["第一句。", "第二句。"]
+
+        async def synthesize_segment_stream(self, segment_text: str):
+            if segment_text == "第一句。":
+                yield b"seg1-a"
+                yield b"seg1-b"
+            else:
+                yield b"seg2-a"
+
+    synthesizer = _SegmentedSynthesizer()
+
+    ws_server = _make_server(
+        speech_recognizer=recognizer,
+        ai_agent=agent,
+        speech_synthesizer=synthesizer,
+    )
+    ws_server._server = await websockets.serve(ws_server.handle_client, "127.0.0.1", 0)
+    ws_server._port = ws_server._server.sockets[0].getsockname()[1]
+
+    try:
+        url = f"ws://127.0.0.1:{ws_server._port}"
+        async with websockets.connect(url) as ws:
+            await ws.send(json.dumps({"type": "audio", "format": "wav", "sample_rate": 16000}))
+            await ws.send(b"\x00" * 400)
+
+            await asyncio.wait_for(ws.recv(), timeout=2.0)  # processing
+            await asyncio.wait_for(ws.recv(), timeout=2.0)  # synthesizing
+
+            msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            assert msg["type"] == "audio_response"
+            assert msg.get("segment_batch") is True
+
+            s1_start = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            assert s1_start["type"] == "audio_segment_start"
+            assert s1_start["segment_id"] == 1
+
+            c1_meta = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            assert c1_meta["type"] == "audio_chunk"
+            assert c1_meta["segment_id"] == 1
+            assert isinstance(await asyncio.wait_for(ws.recv(), timeout=2.0), bytes)
+
+            c2_meta = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            assert c2_meta["type"] == "audio_chunk"
+            assert c2_meta["segment_id"] == 1
+            assert isinstance(await asyncio.wait_for(ws.recv(), timeout=2.0), bytes)
+
+            s1_end = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            assert s1_end["type"] == "audio_segment_end"
+            assert s1_end["segment_id"] == 1
+            assert s1_end["chunks"] == 2
+
+            s2_start = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            assert s2_start["type"] == "audio_segment_start"
+            assert s2_start["segment_id"] == 2
+
+            c3_meta = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            assert c3_meta["type"] == "audio_chunk"
+            assert c3_meta["segment_id"] == 2
+            assert isinstance(await asyncio.wait_for(ws.recv(), timeout=2.0), bytes)
+
+            s2_end = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            assert s2_end["type"] == "audio_segment_end"
+            assert s2_end["segment_id"] == 2
+            assert s2_end["chunks"] == 1
+
+            end_msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            assert end_msg["type"] == "audio_end"
+            assert end_msg["chunks"] == 3
+    finally:
+        await ws_server.stop()
